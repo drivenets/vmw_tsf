@@ -1,4 +1,4 @@
-package main
+package hal
 
 import (
 	"fmt"
@@ -6,29 +6,29 @@ import (
 	"sync"
 )
 
-type DnHalImpl struct {
+type DnHalMockImpl struct {
 	mutex       sync.Mutex
 	initialized bool
 }
 
-var hal = &DnHalImpl{}
+var mock = &DnHalMockImpl{}
 
 func NewDnHalMock() DnHal {
-	hal.mutex.Lock()
-	defer hal.mutex.Unlock()
-	if !hal.initialized {
-		hal.Init()
+	mock.mutex.Lock()
+	defer mock.mutex.Unlock()
+	if !mock.initialized {
+		mock.Init()
 	}
-	return hal
+	return mock
 }
 
-func (hal *DnHalImpl) Init() {
+func (hal *DnHalMockImpl) Init() {
 	hal.initialized = true
 }
 
 // type FlowSteeringTable map[Ipv4FlowKey]Ipv4Addr
 
-func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
+func (*DnHalMockImpl) Steer(fk *FlowKey, nh string) error {
 	fmt.Printf("steer flow: %s to next hop: %s\n", fk, nh)
 	return nil
 }
@@ -58,7 +58,7 @@ var itl = map[IfName]InterfaceTelemetry{
 	},
 }
 
-func (*DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
+func (*DnHalMockImpl) GetInterfaces(v InterfaceVisitor) error {
 	for ifc, tl := range itl {
 		err := v(ifc, &tl)
 		if err != nil {
@@ -117,7 +117,7 @@ var ftl = map[*FlowKey]FlowTelemetry{
 	},
 }
 
-func (*DnHalImpl) GetFlows(v FlowVisitor) error {
+func (*DnHalMockImpl) GetFlows(v FlowVisitor) error {
 	for fk, tl := range ftl {
 		err := v(fk, &tl)
 		if err != nil {

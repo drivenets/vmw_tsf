@@ -1,77 +1,118 @@
-package main
+package hal
 
-import "net"
+import (
+	"context"
+	"fmt"
+	"log"
+	"strings"
+	"sync"
+	"time"
 
-type FlowProto uint8
-
-const (
-	TCP = FlowProto(0x06)
-	UDP = FlowProto(0x11)
+	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/ygot/ygot"
+	"google.golang.org/grpc"
 )
 
-type FlowKey struct {
-	Protocol FlowProto
-	SrcAddr  net.IP
-	DstAddr  net.IP
-	SrcPort  uint16
-	DstPort  uint16
+type DnHalImpl struct {
+	mutex       sync.Mutex
+	initialized bool
+	grpc_addr   string
+	interfaces  struct {
+		l2u   map[string]string
+		u2l   map[string]string
+		stats map[string]InterfaceTelemetry
+	}
 }
 
-// Note interface naming needs a translation layer between NCP ports
-// used by the SI and interfaces presented to the HALO container
-type IfName string
+var hal = &DnHalImpl{}
 
-// Currently we don't split delay and jitter depending on traffic
-// direction: egress or ingress. Instead we're using aggregated
-// round-trip values depending on measurement method
-type LinkTelemetry struct {
-	// assumption: focused on the TX
-	Delay  float64
-	Jitter float64
+func NewDnHal() DnHal {
+	if !hal.initialized {
+		hal.Init()
+	}
+	return hal
 }
 
-// Here we report statistics collected from the associated NCP port
-// but this may not be correct if the port is also used by traffic
-// other than HALO. As an alternative we could provide Linux kernel
-// statistics for the virtual interface passed to the HALO container
-// but this may not see all rx/tx in case of hardware offload
-type InterfaceTelemetry struct {
-	Speed   uint64
-	RxBytes uint64
-	RxBps   uint64
-	TxBytes uint64
-	TxBps   uint64
-	// An interface is mapped 1:1 to a tunnel between two HALO
-	// neighbors. The delay and jitter in this case refers to the
-	// link represented by this interface.
-	Link LinkTelemetry
+func (hal *DnHalImpl) Init() {
+	hal.mutex.Lock()
+	defer hal.mutex.Unlock()
+
+	hal.grpc_addr = "localhost:50051"
+	hal.interfaces.l2u["ge100-0/0/1"] = "halo1"
+	hal.interfaces.u2l["halo1"] = "ge100-0/0/1"
+	hal.interfaces.stats["halo1"] = InterfaceTelemetry{}
+
+	go monitorInterfaces()
+
+	hal.initialized = true
 }
 
-// Note: Tx counters are currently not supported because of J2 limitations
-type FlowTelemetry struct {
-	// Rate
-	RxRatePps uint64
-	TxRatePps uint64
-	RxRateBps uint64
-	TxRateBps uint64
+func monitorInterfaces() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
+	defer cancel()
 
-	// Total counters
-	RxTotalPkts  uint64
-	TxTotalPkts  uint64
-	RxTotalBytes uint64
-	TxTotalBytes uint64
+	conn, err := grpc.Dial(hal.grpc_addr, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
 
-	// Interfaces
-	IngressIf IfName
-	EgressIf  IfName
+	c := pb.NewGNMIClient(conn)
+	client, err := c.Subscribe(ctx)
+	if err != nil {
+		log.Fatalf("could not connect: %v", err)
+	}
+
+	for key, _ := range hal.interfaces.stats {
+		path := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/counters/ethernet-counters", key)
+		pathStr := strings.Replace(path, "'", "", -1)
+		gnmiPath, _ := ygot.StringToPath(pathStr, ygot.StructuredPath, ygot.StringSlicePath)
+		log.Println("Subscription path: ", path)
+		log.Println("Subscription gnmi path ", gnmiPath)
+
+		client.Send(&pb.SubscribeRequest{
+			Request: &pb.SubscribeRequest_Subscribe{
+				Subscribe: &pb.SubscriptionList{
+					Subscription: []*pb.Subscription{
+						{
+							Path:           gnmiPath,
+							SampleInterval: uint64(time.Duration(15 * time.Second)),
+						},
+					},
+					Mode:     pb.SubscriptionList_STREAM,
+					Encoding: pb.Encoding_JSON,
+				},
+			},
+		})
+	}
+
+	for {
+		response, err := client.Recv()
+		if err != nil {
+			log.Fatalf("Failed to get response: %v", err)
+		}
+
+		log.Println("Received response:")
+		for _, update := range response.GetUpdate().Update {
+			log.Println(update.Val)
+			//log.Println(proto.MarshalTextString(update.Val))
+
+			// TODO: update interfaces structure
+		}
+	}
 }
 
-type InterfaceVisitor func(IfName, *InterfaceTelemetry) error
-type FlowVisitor func(*FlowKey, *FlowTelemetry) error
+func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
+	log.Fatal("NOT IMPLEMENTED")
+	return nil
+}
 
-// HAL interface
-type DnHal interface {
-	Steer(*FlowKey, string) error
-	GetInterfaces(InterfaceVisitor) error
-	GetFlows(FlowVisitor) error
+func (*DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
+	log.Fatal("NOT IMPLEMENTED")
+	return nil
+}
+
+func (*DnHalImpl) GetFlows(v FlowVisitor) error {
+	log.Fatal("NOT IMPLEMENTED")
+	return nil
 }
