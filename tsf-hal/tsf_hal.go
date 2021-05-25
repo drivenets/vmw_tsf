@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +17,7 @@ import (
 type DnHalImpl struct {
 	mutex       sync.Mutex
 	initialized bool
-	grpc_addr   string
+	grpcAddr    string
 	interfaces  struct {
 		l2u   map[string]string
 		u2l   map[string]string
@@ -37,10 +38,29 @@ func (hal *DnHalImpl) Init() {
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
 
-	hal.grpc_addr = "localhost:50051"
-	hal.interfaces.l2u["ge100-0/0/1"] = "halo1"
-	hal.interfaces.u2l["halo1"] = "ge100-0/0/1"
-	hal.interfaces.stats["halo1"] = InterfaceTelemetry{}
+	hal.grpcAddr = "localhost:50051"
+	if grpcAddrEnv := os.Getenv("GRPC_ADDR"); grpcAddrEnv != "" {
+		hal.grpcAddr = grpcAddrEnv
+	}
+
+	dnosInterface := "ge100-0/0/1"
+	if dnosInterfaceEnv := os.Getenv("DNOS_IFACE"); dnosInterfaceEnv != "" {
+		dnosInterface = dnosInterfaceEnv
+	}
+
+	halInterface := "halo1"
+	if halInterfaceName := os.Getenv("HAL_IFACE"); halInterfaceName != "" {
+		halInterface = halInterfaceName
+	}
+
+	hal.interfaces.l2u = make(map[string]string)
+	hal.interfaces.l2u[dnosInterface] = halInterface
+
+	hal.interfaces.u2l = make(map[string]string)
+	hal.interfaces.u2l[halInterface] = dnosInterface
+
+	hal.interfaces.stats = make(map[string]InterfaceTelemetry)
+	hal.interfaces.stats[halInterface] = InterfaceTelemetry{}
 
 	go monitorInterfaces()
 
@@ -51,7 +71,7 @@ func monitorInterfaces() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
 	defer cancel()
 
-	conn, err := grpc.Dial(hal.grpc_addr, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
@@ -63,8 +83,8 @@ func monitorInterfaces() {
 		log.Fatalf("could not connect: %v", err)
 	}
 
-	for key, _ := range hal.interfaces.stats {
-		path := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/counters/ethernet-counters", key)
+	for _, value := range hal.interfaces.u2l {
+		path := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/counters/ethernet-counters", value)
 		pathStr := strings.Replace(path, "'", "", -1)
 		gnmiPath, _ := ygot.StringToPath(pathStr, ygot.StructuredPath, ygot.StringSlicePath)
 		log.Println("Subscription path: ", path)
