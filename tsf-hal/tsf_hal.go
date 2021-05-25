@@ -41,10 +41,10 @@ type InterfaceTelemetry struct {
 	RxBps   uint64
 	TxBytes uint64
 	TxBps   uint64
-	// Link telemetry reports ONLY information about nodes/neighbors
-	// that are directly connected to us (derived from configuration)
-	// Using "string" as key because net.IP is a slice
-	Links map[string]LinkTelemetry
+	// An interface is mapped 1:1 to a tunnel between two HALO
+	// neighbors. The delay and jitter in this case refers to the
+	// link represented by this interface.
+	Link LinkTelemetry
 }
 
 // Note: Tx counters are currently not supported because of J2 limitations
@@ -71,7 +71,7 @@ type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 
 // HAL interface
 type DnHal interface {
-	Steer(*FlowKey, net.IP) error
+	Steer(*FlowKey, string) error
 	GetInterfaces(InterfaceVisitor) error
 	GetFlows(FlowVisitor) error
 }

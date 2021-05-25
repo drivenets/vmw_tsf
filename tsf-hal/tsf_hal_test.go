@@ -15,10 +15,7 @@ func TestSteer(t *testing.T) {
 		SrcPort:  2038,
 		DstPort:  443,
 	}
-	err := hal.Steer(
-		&flow,
-		net.ParseIP("10.10.0.15"),
-	)
+	err := hal.Steer(&flow, "halo2")
 	if err != nil {
 		t.Errorf("Failed to steer flow: flow=%q, reason=%q", flow, err)
 	}
@@ -36,13 +33,8 @@ func TestGetInterfaces(t *testing.T) {
 			fmt.Printf("   tx bytes total: %d\n", tm.TxBytes)
 			fmt.Printf("   rx bytes/sec: %d\n", tm.RxBps)
 			fmt.Printf("   tx bytes/sec: %d\n", tm.TxBps)
-			if len(tm.Links) > 0 {
-				fmt.Printf("      links:\n")
-				for k, v := range tm.Links {
-					fmt.Printf("      %s: delay %.03f\n", k, v.Delay)
-					fmt.Printf("      %s: jitter %.03f\n", k, v.Jitter)
-				}
-			}
+			fmt.Printf("   delay %.03f\n", tm.Link.Delay)
+			fmt.Printf("   jitter %.03f\n", tm.Link.Jitter)
 			return nil
 		},
 	)

@@ -28,7 +28,7 @@ func (hal *DnHalImpl) Init() {
 
 // type FlowSteeringTable map[Ipv4FlowKey]Ipv4Addr
 
-func (*DnHalImpl) Steer(fk *FlowKey, nh net.IP) error {
+func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	fmt.Printf("steer flow: %s to next hop: %s\n", fk, nh)
 	return nil
 }
@@ -40,15 +40,9 @@ var itl = map[IfName]InterfaceTelemetry{
 		RxBps:   100,
 		TxBytes: 2000,
 		TxBps:   200,
-		Links: map[string]LinkTelemetry{
-			"pod-b": {
-				Delay:  15.33,
-				Jitter: 4.93,
-			},
-			"pod-c": {
-				Delay:  30.84,
-				Jitter: 6.57,
-			},
+		Link: LinkTelemetry{
+			Delay:  30.84,
+			Jitter: 6.57,
 		},
 	},
 	"halo2": {
@@ -57,15 +51,9 @@ var itl = map[IfName]InterfaceTelemetry{
 		RxBps:   110,
 		TxBytes: 2100,
 		TxBps:   210,
-		Links: map[string]LinkTelemetry{
-			"pod-b": {
-				Delay:  18.23,
-				Jitter: 7.17,
-			},
-			"pod-c": {
-				Delay:  20.91,
-				Jitter: 8.22,
-			},
+		Link: LinkTelemetry{
+			Delay:  20.91,
+			Jitter: 8.22,
 		},
 	},
 }
