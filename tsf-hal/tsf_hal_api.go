@@ -19,7 +19,7 @@ type FlowKey struct {
 
 // Note interface naming needs a translation layer between NCP ports
 // used by the SI and interfaces presented to the HALO container
-type IfName string
+//type string string
 
 // Currently we don't split delay and jitter depending on traffic
 // direction: egress or ingress. Instead we're using aggregated
@@ -36,11 +36,11 @@ type LinkTelemetry struct {
 // statistics for the virtual interface passed to the HALO container
 // but this may not see all rx/tx in case of hardware offload
 type InterfaceTelemetry struct {
-	Speed   uint64
-	RxBytes uint64
-	RxBps   uint64
-	TxBytes uint64
-	TxBps   uint64
+	Speed   uint64 `json:"user_id"`
+	RxBytes uint64 `json:"rx-octets"`
+	RxBps   uint64 `json:"rx-bits-per-secon"`
+	TxBytes uint64 `json:"tx-octets"`
+	TxBps   uint64 `json:"tx-bits-per-second"`
 	// An interface is mapped 1:1 to a tunnel between two HALO
 	// neighbors. The delay and jitter in this case refers to the
 	// link represented by this interface.
@@ -62,14 +62,14 @@ type FlowTelemetry struct {
 	TxTotalBytes uint64
 
 	// Interfaces
-	IngressIf IfName
-	EgressIf  IfName
+	IngressIf string
+	EgressIf  string
 }
 
-type InterfaceVisitor func(IfName, *InterfaceTelemetry) error
+type InterfaceVisitor func(string, *InterfaceTelemetry) error
 type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 
-// HAL interface
+// DnHal interface
 type DnHal interface {
 	Steer(*FlowKey, string) error
 	GetInterfaces(InterfaceVisitor) error

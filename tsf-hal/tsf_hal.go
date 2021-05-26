@@ -2,6 +2,7 @@ package hal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -112,12 +113,12 @@ func monitorInterfaces() {
 			log.Fatalf("Failed to get response: %v", err)
 		}
 
-		log.Println("Received response:")
 		for _, update := range response.GetUpdate().Update {
-			log.Println(update.Val)
-			//log.Println(proto.MarshalTextString(update.Val))
-
 			// TODO: update interfaces structure
+			var tmpTelemetry InterfaceTelemetry
+			_ = json.Unmarshal(update.Val.GetJsonVal(), &tmpTelemetry)
+			hal.interfaces.stats["halo1"] = tmpTelemetry  //InterfaceTelemetry{Speed: 1234}
+			//log.Println(proto.MarshalTextString(update.Val))
 		}
 	}
 }
@@ -127,8 +128,13 @@ func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	return nil
 }
 
-func (*DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
-	log.Fatal("NOT IMPLEMENTED")
+func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
+	for ifc, tl := range hal.interfaces.stats {
+		err := v(ifc, &tl)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

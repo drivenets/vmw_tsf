@@ -33,7 +33,7 @@ func (*DnHalMockImpl) Steer(fk *FlowKey, nh string) error {
 	return nil
 }
 
-var itl = map[IfName]InterfaceTelemetry{
+var itl = map[string]InterfaceTelemetry{
 	"halo1": {
 		Speed:   10,
 		RxBytes: 1000,
