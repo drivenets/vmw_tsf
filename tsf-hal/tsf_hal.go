@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,18 +86,28 @@ func monitorInterfaces() {
 	}
 
 	for _, value := range hal.interfaces.u2l {
-		path := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/counters/ethernet-counters", value)
-		pathStr := strings.Replace(path, "'", "", -1)
-		gnmiPath, _ := ygot.StringToPath(pathStr, ygot.StructuredPath, ygot.StringSlicePath)
-		log.Println("Subscription path: ", path)
-		log.Println("Subscription gnmi path ", gnmiPath)
+		ethernetCountersPath := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/counters/ethernet-counters", value)
+		ethernetCountersPathStr := strings.Replace(ethernetCountersPath, "'", "", -1)
+		ethernetCountersGnmiPath, _ := ygot.StringToPath(ethernetCountersPathStr, ygot.StructuredPath, ygot.StringSlicePath)
+		log.Println("Subscription path: ", ethernetCountersPath)
+		log.Println("Subscription gnmi path ", ethernetCountersGnmiPath)
+
+		interfaceSpeedPath := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/interface-speed", value)
+		interfaceSpeedPathStr := strings.Replace(interfaceSpeedPath, "'", "", -1)
+		interfaceSpeedGnmiPath, _ := ygot.StringToPath(interfaceSpeedPathStr, ygot.StructuredPath, ygot.StringSlicePath)
+		log.Println("Subscription path: ", interfaceSpeedPath)
+		log.Println("Subscription gnmi path ", interfaceSpeedGnmiPath)
 
 		client.Send(&pb.SubscribeRequest{
 			Request: &pb.SubscribeRequest_Subscribe{
 				Subscribe: &pb.SubscriptionList{
 					Subscription: []*pb.Subscription{
 						{
-							Path:           gnmiPath,
+							Path:           interfaceSpeedGnmiPath,
+							SampleInterval: uint64(time.Duration(15 * time.Second)),
+						},
+						{
+							Path:           ethernetCountersGnmiPath,
 							SampleInterval: uint64(time.Duration(15 * time.Second)),
 						},
 					},
@@ -107,6 +118,7 @@ func monitorInterfaces() {
 		})
 	}
 
+	var ifSpeed uint64
 	for {
 		response, err := client.Recv()
 		if err != nil {
@@ -115,10 +127,24 @@ func monitorInterfaces() {
 
 		for _, update := range response.GetUpdate().Update {
 			// TODO: update interfaces structure
-			var tmpTelemetry InterfaceTelemetry
-			_ = json.Unmarshal(update.Val.GetJsonVal(), &tmpTelemetry)
-			hal.interfaces.stats["halo1"] = tmpTelemetry  //InterfaceTelemetry{Speed: 1234}
+			//log.Println(string(update.Val.GetJsonVal()))
 			//log.Println(proto.MarshalTextString(update.Val))
+			log.Println(update.Path.GetElem()[len(update.Path.GetElem())-1].Name)
+
+			tmpTelemetry := &InterfaceTelemetry{}
+			lastPathElement := update.Path.GetElem()[len(update.Path.GetElem())-1].Name
+
+			if lastPathElement == "interface-speed" {
+				s, err := strconv.Atoi(string(update.Val.GetJsonVal()))
+				if err != nil {
+					log.Panic(err)
+				}
+				ifSpeed = uint64(s)
+			}
+
+			tmpTelemetry = &InterfaceTelemetry{Speed: ifSpeed}
+			_ = json.Unmarshal(update.Val.GetJsonVal(), &tmpTelemetry)
+			hal.interfaces.stats["halo1"] = *tmpTelemetry
 		}
 	}
 }
