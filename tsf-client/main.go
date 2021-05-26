@@ -28,7 +28,7 @@ func main() {
 
 	h := hal.NewDnHal()
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 	h.GetInterfaces(
 		func(ifc string, tm *hal.InterfaceTelemetry) error {
 			fmt.Printf("interface: %s\n", ifc)
@@ -41,5 +41,5 @@ func main() {
 			fmt.Printf("   jitter %.03f\n", tm.Link.Jitter)
 			return nil
 		})
-	time.Sleep(5 * time.Minute)
+	time.Sleep(1 * time.Minute)
 }
