@@ -129,7 +129,7 @@ func monitorInterfaces() {
 			// TODO: update interfaces structure
 			//log.Println(string(update.Val.GetJsonVal()))
 			//log.Println(proto.MarshalTextString(update.Val))
-			log.Println(update.Path.GetElem()[len(update.Path.GetElem())-1].Name)
+			//log.Println(update.Path.GetElem()[len(update.Path.GetElem())-1].Name)
 
 			tmpTelemetry := &InterfaceTelemetry{}
 			lastPathElement := update.Path.GetElem()[len(update.Path.GetElem())-1].Name
@@ -145,6 +145,7 @@ func monitorInterfaces() {
 			tmpTelemetry = &InterfaceTelemetry{Speed: ifSpeed}
 			_ = json.Unmarshal(update.Val.GetJsonVal(), &tmpTelemetry)
 			hal.interfaces.stats["halo1"] = *tmpTelemetry
+			log.Println(update.Val)
 		}
 	}
 }
