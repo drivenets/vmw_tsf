@@ -36,7 +36,7 @@ type LinkTelemetry struct {
 // statistics for the virtual interface passed to the HALO container
 // but this may not see all rx/tx in case of hardware offload
 type InterfaceTelemetry struct {
-	Speed   uint64 `json:"user_id"`
+	Speed   uint64
 	RxBytes uint64 `json:"rx-octets"`
 	RxBps   uint64 `json:"rx-bits-per-secon"`
 	TxBytes uint64 `json:"tx-octets"`
