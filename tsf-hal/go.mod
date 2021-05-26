@@ -1,4 +1,4 @@
-module drivenets.com/tsf/hal
+module github.com/drivenets/vmw_tsf/tsf-hal
 
 go 1.16
 
