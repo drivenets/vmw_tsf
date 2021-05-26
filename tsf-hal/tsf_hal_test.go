@@ -25,7 +25,7 @@ func TestGetInterfaces(t *testing.T) {
 	hal := NewDnHalMock()
 	var count int
 	hal.GetInterfaces(
-		func(ifc IfName, tm *InterfaceTelemetry) error {
+		func(ifc string, tm *InterfaceTelemetry) error {
 			count += 1
 			fmt.Printf("interface: %s\n", ifc)
 			fmt.Printf("   speed: %d\n", tm.Speed)

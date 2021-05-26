@@ -4,16 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/grpc"
+
+	gfu "github.com/cloudflare/goflow/v3/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 type DnHalImpl struct {
@@ -21,10 +22,13 @@ type DnHalImpl struct {
 	initialized bool
 	grpcAddr    string
 	interfaces  struct {
-		l2u   map[string]string
-		u2l   map[string]string
-		stats map[string]InterfaceTelemetry
+		lower2upper    map[string]string
+		upper2lower    map[string]string
+		netflow2upper  map[uint32]string
+		stats          map[string]InterfaceTelemetry
+		sampleInterval int
 	}
+	nf *gfu.StateNetFlow
 }
 
 var hal = &DnHalImpl{}
@@ -36,78 +40,145 @@ func NewDnHal() DnHal {
 	return hal
 }
 
+const DRIVENETS_GRPC_ADDR = "localhost:50051"
+
 func (hal *DnHalImpl) Init() {
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
 
-	hal.grpcAddr = "localhost:50051"
-	if grpcAddrEnv := os.Getenv("GRPC_ADDR"); grpcAddrEnv != "" {
-		hal.grpcAddr = grpcAddrEnv
+	var ok bool
+
+	if hal.grpcAddr, ok = os.LookupEnv("GRPC_ADDR"); !ok {
+		hal.grpcAddr = DRIVENETS_GRPC_ADDR
 	}
 
-	dnosInterface := "ge100-0/0/1"
-	if dnosInterfaceEnv := os.Getenv("DNOS_IFACE"); dnosInterfaceEnv != "" {
-		dnosInterface = dnosInterfaceEnv
-	}
-
-	halInterface := "halo1"
-	if halInterfaceName := os.Getenv("HAL_IFACE"); halInterfaceName != "" {
-		halInterface = halInterfaceName
-	}
-
-	hal.interfaces.l2u = make(map[string]string)
-	hal.interfaces.l2u[dnosInterface] = halInterface
-
-	hal.interfaces.u2l = make(map[string]string)
-	hal.interfaces.u2l[halInterface] = dnosInterface
-
-	hal.interfaces.stats = make(map[string]InterfaceTelemetry)
-	hal.interfaces.stats[halInterface] = InterfaceTelemetry{}
+	hal.InitInterfaces()
 
 	go monitorInterfaces()
+
+	hal.nf = &gfu.StateNetFlow{
+		Transport: &gfu.DefaultLogTransport{},
+		Logger:    log.StandardLogger(),
+	}
+
+	go monitorFlows()
 
 	hal.initialized = true
 }
 
-func monitorInterfaces() {
+const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 15
+const HALO_INTERFACES_COUNT = 2
+
+func (hal *DnHalImpl) InitInterfaces() {
+	var dnIf string
+	var haloIf string
+	var ok bool
+
+	hal.interfaces.lower2upper = make(map[string]string)
+	hal.interfaces.upper2lower = make(map[string]string)
+	hal.interfaces.stats = make(map[string]InterfaceTelemetry)
+	hal.interfaces.netflow2upper = make(map[uint32]string)
+
+	var interval string
+	hal.interfaces.sampleInterval = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
+	if interval, ok = os.LookupEnv("IFC_SAMPLE"); ok {
+		var err error
+		if hal.interfaces.sampleInterval, err = strconv.Atoi(interval); err != nil {
+			log.Fatalf("Failed to parse interface sampling interval: %s", interval)
+		}
+	}
+
+	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
+		haloIf = fmt.Sprintf("halo%d", idx)
+		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
+			dnIf = fmt.Sprintf("ge100-0/0/%d", idx)
+		}
+		hal.interfaces.lower2upper[dnIf] = haloIf
+		hal.interfaces.upper2lower[haloIf] = dnIf
+		hal.interfaces.stats[haloIf] = InterfaceTelemetry{}
+	}
+
+	for haloIf, dnIf = range hal.interfaces.upper2lower {
+		var ifIdx uint32
+		var err error
+
+		conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
+		if err != nil {
+			log.Fatal("failed to connect to gRPC server: %s. Reason: %w", hal.grpcAddr, err)
+		}
+		defer conn.Close()
+
+		client := pb.NewGNMIClient(conn)
+
+		if ifIdx, err = getDnIfIndex(client, dnIf); err != nil {
+			log.Fatalf("Failed to get interface index for %s. Reason: %v", dnIf, err)
+		}
+		hal.interfaces.netflow2upper[ifIdx] = haloIf
+		log.Printf("Interface: upper=%s, lower=%s, net-flow-index=%d",
+			haloIf, dnIf, ifIdx)
+	}
+}
+
+const DRIVENETS_IFINDEX_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/if-index"
+
+func getDnIfIndex(client pb.GNMIClient, ifc string) (uint32, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
 	defer cancel()
 
-	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
+	var pathList []*pb.Path
+	idxPath := fmt.Sprintf(DRIVENETS_IFINDEX_PATH_TEMPLATE, ifc)
+	pbPath, err := ygot.StringToPath(idxPath, ygot.StructuredPath, ygot.StringSlicePath)
 	if err != nil {
-		log.Fatalf("Failed to connect: %v", err)
+		return 0, fmt.Errorf("failed to convert %q to gNMI Path. Reason: %w", idxPath, err)
 	}
-	defer conn.Close()
+	pathList = append(pathList, pbPath)
+	resp, err := client.Get(ctx, &pb.GetRequest{
+		Path:     pathList,
+		Encoding: pb.Encoding_JSON,
+	})
+	notifs := resp.GetNotification()
+	if len(notifs) != 1 {
+		return 0, fmt.Errorf("unexpected notifications count: want 1, got %d, path=%s", len(notifs), idxPath)
+	}
+	updates := notifs[0].GetUpdate()
+	if len(updates) != 1 {
+		return 0, fmt.Errorf("unexpected updates count: want 1, got %d, path=%s", len(updates), idxPath)
+	}
+	val := updates[0].GetVal()
+	var ifIndex uint32
+	if err := json.Unmarshal(val.GetJsonVal(), &ifIndex); err != nil {
+		log.Fatalf("failed to convert value: %q. Reason: %w", val, err)
+	}
+	return ifIndex, nil
+}
 
-	c := pb.NewGNMIClient(conn)
-	client, err := c.Subscribe(ctx)
+const DRIVENETS_IFOPER_COUNTERS_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/counters/ethernet-counters"
+const DRIVENETS_IFOPER_SPEED_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/interface-speed"
+
+func subscribeForInterfaceStats(client pb.GNMIClient, ctx context.Context) (pb.GNMI_SubscribeClient, error) {
+	sc, err := client.Subscribe(ctx)
 	if err != nil {
-		log.Fatalf("could not connect: %v", err)
+		return nil, fmt.Errorf("could not subscribe to gNMI. Reason: %w", err)
 	}
 
-	for _, value := range hal.interfaces.u2l {
-		ethernetCountersPath := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/counters/ethernet-counters", value)
-		ethernetCountersPathStr := strings.Replace(ethernetCountersPath, "'", "", -1)
-		ethernetCountersGnmiPath, _ := ygot.StringToPath(ethernetCountersPathStr, ygot.StructuredPath, ygot.StringSlicePath)
-		log.Println("Subscription path: ", ethernetCountersPath)
-		log.Println("Subscription gnmi path ", ethernetCountersGnmiPath)
+	for _, dnIf := range hal.interfaces.upper2lower {
+		countersPath, _ := ygot.StringToPath(
+			fmt.Sprintf(DRIVENETS_IFOPER_COUNTERS_PATH_TEMPLATE, dnIf),
+			ygot.StructuredPath, ygot.StringSlicePath)
+		speedPath, _ := ygot.StringToPath(
+			fmt.Sprintf(DRIVENETS_IFOPER_SPEED_PATH_TEMPLATE, dnIf),
+			ygot.StructuredPath, ygot.StringSlicePath)
 
-		interfaceSpeedPath := fmt.Sprintf("/drivenets-top/interfaces/interface[name='%s']/oper-items/interface-speed", value)
-		interfaceSpeedPathStr := strings.Replace(interfaceSpeedPath, "'", "", -1)
-		interfaceSpeedGnmiPath, _ := ygot.StringToPath(interfaceSpeedPathStr, ygot.StructuredPath, ygot.StringSlicePath)
-		log.Println("Subscription path: ", interfaceSpeedPath)
-		log.Println("Subscription gnmi path ", interfaceSpeedGnmiPath)
-
-		client.Send(&pb.SubscribeRequest{
+		sc.Send(&pb.SubscribeRequest{
 			Request: &pb.SubscribeRequest_Subscribe{
 				Subscribe: &pb.SubscriptionList{
 					Subscription: []*pb.Subscription{
 						{
-							Path:           interfaceSpeedGnmiPath,
+							Path:           speedPath,
 							SampleInterval: uint64(time.Duration(15 * time.Second)),
 						},
 						{
-							Path:           ethernetCountersGnmiPath,
+							Path:           countersPath,
 							SampleInterval: uint64(time.Duration(15 * time.Second)),
 						},
 					},
@@ -117,10 +188,29 @@ func monitorInterfaces() {
 			},
 		})
 	}
+	return sc, nil
+}
+
+func monitorInterfaces() {
+	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
+	defer cancel()
+
+	client := pb.NewGNMIClient(conn)
+	sc, err := subscribeForInterfaceStats(client, ctx)
+
+	if err != nil {
+		log.Fatalf("Failed to subscribe: %v", err)
+	}
 
 	var ifSpeed uint64
 	for {
-		response, err := client.Recv()
+		response, err := sc.Recv()
 		if err != nil {
 			log.Fatalf("Failed to get response: %v", err)
 		}
@@ -144,9 +234,18 @@ func monitorInterfaces() {
 
 			tmpTelemetry = &InterfaceTelemetry{Speed: ifSpeed}
 			_ = json.Unmarshal(update.Val.GetJsonVal(), &tmpTelemetry)
-			hal.interfaces.stats["halo1"] = *tmpTelemetry
+			hal.interfaces.stats["halo0"] = *tmpTelemetry
 			log.Println(update.Val)
 		}
+	}
+}
+
+func monitorFlows() {
+
+	// TODO: grab snmpifindex (used inside netflow)
+	err := hal.nf.FlowRoutine(1, "0.0.0.0", 2055, true)
+	if err != nil {
+		log.Fatalf("Fatal error: could not monitor flows (%v)", err)
 	}
 }
 
