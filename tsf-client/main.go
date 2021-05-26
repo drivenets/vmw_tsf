@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"drivenets.com/tsf/hal"
+	"github.com/drivenets/vmw_tsf/tsf-hal"
 )
 
 func main() {
