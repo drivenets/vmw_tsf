@@ -53,11 +53,21 @@ func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
 			SrcPort:  uint16(msg.SrcPort),
 			DstPort:  uint16(msg.DstPort),
 		}
+
+		var inIf string
+		var outIf string
+		var ok bool
+
+		if inIf, ok = hal.interfaces.netflow2upper[msg.InIf]; !ok {
+			inIf = "N/A"
+		}
+		if outIf, ok = hal.interfaces.netflow2upper[msg.OutIf]; !ok {
+			outIf = "N/A"
+		}
+
 		fmt.Println(key,
 			"bw:", msg.Bytes, msg.Packets,
-			"ifc:",
-			hal.interfaces.netflow2upper[msg.InIf],
-			hal.interfaces.netflow2upper[msg.OutIf])
+			"ifc:", inIf, outIf)
 	}
 }
 
