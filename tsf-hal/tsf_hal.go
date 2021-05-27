@@ -15,6 +15,8 @@ import (
 
 	gfu "github.com/cloudflare/goflow/v3/utils"
 	log "github.com/sirupsen/logrus"
+
+	flowmessage "github.com/cloudflare/goflow/v3/pb"
 )
 
 type DnHalImpl struct {
@@ -42,6 +44,21 @@ func NewDnHal() DnHal {
 
 const DRIVENETS_GRPC_ADDR = "localhost:50051"
 
+func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
+	for _, msg := range update {
+		key := FlowKey{
+			Protocol: FlowProto(msg.Proto),
+			SrcAddr:  msg.SrcAddr,
+			DstAddr:  msg.DstAddr,
+			SrcPort:  uint16(msg.SrcPort),
+			DstPort:  uint16(msg.DstPort),
+		}
+		fmt.Println(key,
+			"bw:", msg.Bytes, msg.Packets,
+			"ifc:", msg.InIf, msg.OutIf)
+	}
+}
+
 func (hal *DnHalImpl) Init() {
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
@@ -57,7 +74,7 @@ func (hal *DnHalImpl) Init() {
 	go monitorInterfaces()
 
 	hal.nf = &gfu.StateNetFlow{
-		Transport: &gfu.DefaultLogTransport{},
+		Transport: hal,
 		Logger:    log.StandardLogger(),
 	}
 
