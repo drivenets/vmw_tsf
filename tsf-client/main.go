@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/drivenets/vmw_tsf/tsf-hal"
+	hal "github.com/drivenets/vmw_tsf/tsf-hal"
 )
 
 func main() {
@@ -28,18 +28,19 @@ func main() {
 
 	h := hal.NewDnHal()
 
-	time.Sleep(10 * time.Second)
-	h.GetInterfaces(
-		func(ifc string, tm *hal.InterfaceTelemetry) error {
-			fmt.Printf("interface: %s\n", ifc)
-			fmt.Printf("   speed: %d\n", tm.Speed)
-			fmt.Printf("   rx bytes total: %d\n", tm.RxBytes)
-			fmt.Printf("   tx bytes total: %d\n", tm.TxBytes)
-			fmt.Printf("   rx bytes/sec: %d\n", tm.RxBps)
-			fmt.Printf("   tx bytes/sec: %d\n", tm.TxBps)
-			fmt.Printf("   delay %.03f\n", tm.Link.Delay)
-			fmt.Printf("   jitter %.03f\n", tm.Link.Jitter)
-			return nil
-		})
-	time.Sleep(1 * time.Minute)
+	for {
+		h.GetInterfaces(
+			func(ifc string, tm *hal.InterfaceTelemetry) error {
+				fmt.Printf("interface: %s\n", ifc)
+				fmt.Printf("   speed: %d\n", tm.Speed)
+				fmt.Printf("   rx bytes total: %d\n", tm.RxBytes)
+				fmt.Printf("   tx bytes total: %d\n", tm.TxBytes)
+				fmt.Printf("   rx bytes/sec: %d\n", tm.RxBps)
+				fmt.Printf("   tx bytes/sec: %d\n", tm.TxBps)
+				fmt.Printf("   delay %.03f\n", tm.Link.Delay)
+				fmt.Printf("   jitter %.03f\n", tm.Link.Jitter)
+				return nil
+			})
+		time.Sleep(10 * time.Second)
+	}
 }
