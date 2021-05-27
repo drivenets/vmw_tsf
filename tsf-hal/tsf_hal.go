@@ -55,7 +55,9 @@ func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
 		}
 		fmt.Println(key,
 			"bw:", msg.Bytes, msg.Packets,
-			"ifc:", msg.InIf, msg.OutIf)
+			"ifc:",
+			hal.interfaces.netflow2upper[msg.InIf],
+			hal.interfaces.netflow2upper[msg.OutIf])
 	}
 }
 
