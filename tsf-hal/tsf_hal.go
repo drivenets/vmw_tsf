@@ -215,7 +215,12 @@ func monitorInterfaces() {
 		}
 
 		for _, update := range response.GetUpdate().Update {
-			// TODO: update interfaces structure
+			var dnIf string
+			for _, pEl := range update.Path.GetElem() {
+				if pEl.Name == "interface" {
+					dnIf = hal.interfaces.lower2upper[pEl.Key["name"]]
+				}
+			}
 			//log.Println(string(update.Val.GetJsonVal()))
 			//log.Println(proto.MarshalTextString(update.Val))
 			//log.Println(update.Path.GetElem()[len(update.Path.GetElem())-1].Name)
@@ -228,10 +233,10 @@ func monitorInterfaces() {
 				if err != nil {
 					log.Panic(err)
 				}
-				hal.interfaces.stats["halo0"].Speed = uint64(s)
+				hal.interfaces.stats[dnIf].Speed = uint64(s)
 				log.Printf("Updated interface speed: %s\n", s)
 			} else {
-				ifc := hal.interfaces.stats["halo0"]
+				ifc := hal.interfaces.stats[dnIf]
 				err = json.Unmarshal(update.Val.GetJsonVal(), ifc)
 				if err != nil {
 					log.Fatalf("Failed to unmarshal: %s. Reason: %v",
