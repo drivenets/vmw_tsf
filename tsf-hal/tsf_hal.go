@@ -25,7 +25,7 @@ type DnHalImpl struct {
 		lower2upper    map[string]string
 		upper2lower    map[string]string
 		netflow2upper  map[uint32]string
-		stats          map[string]InterfaceTelemetry
+		stats          map[string]*InterfaceTelemetry
 		sampleInterval int
 	}
 	nf *gfu.StateNetFlow
@@ -76,7 +76,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 
 	hal.interfaces.lower2upper = make(map[string]string)
 	hal.interfaces.upper2lower = make(map[string]string)
-	hal.interfaces.stats = make(map[string]InterfaceTelemetry)
+	hal.interfaces.stats = make(map[string]*InterfaceTelemetry)
 	hal.interfaces.netflow2upper = make(map[uint32]string)
 
 	var interval string
@@ -95,7 +95,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 		}
 		hal.interfaces.lower2upper[dnIf] = haloIf
 		hal.interfaces.upper2lower[haloIf] = dnIf
-		hal.interfaces.stats[haloIf] = InterfaceTelemetry{}
+		hal.interfaces.stats[haloIf] = &InterfaceTelemetry{}
 	}
 
 	for haloIf, dnIf = range hal.interfaces.upper2lower {
@@ -208,7 +208,6 @@ func monitorInterfaces() {
 		log.Fatalf("Failed to subscribe: %v", err)
 	}
 
-	var ifSpeed uint64
 	for {
 		response, err := sc.Recv()
 		if err != nil {
@@ -221,7 +220,7 @@ func monitorInterfaces() {
 			//log.Println(proto.MarshalTextString(update.Val))
 			//log.Println(update.Path.GetElem()[len(update.Path.GetElem())-1].Name)
 
-			tmpTelemetry := &InterfaceTelemetry{}
+			log.Printf("Update content: %v\n", update.Val)
 			lastPathElement := update.Path.GetElem()[len(update.Path.GetElem())-1].Name
 
 			if lastPathElement == "interface-speed" {
@@ -229,13 +228,17 @@ func monitorInterfaces() {
 				if err != nil {
 					log.Panic(err)
 				}
-				ifSpeed = uint64(s)
+				hal.interfaces.stats["halo0"].Speed = uint64(s)
+				log.Printf("Updated interface speed: %s\n", s)
+			} else {
+				ifc := hal.interfaces.stats["halo0"]
+				err = json.Unmarshal(update.Val.GetJsonVal(), ifc)
+				if err != nil {
+					log.Fatalf("Failed to unmarshal: %s. Reason: %v",
+						update.Val.GetJsonVal(), err)
+				}
+				log.Printf("Updated interface counters: %v\n", *ifc)
 			}
-
-			tmpTelemetry = &InterfaceTelemetry{Speed: ifSpeed}
-			_ = json.Unmarshal(update.Val.GetJsonVal(), &tmpTelemetry)
-			hal.interfaces.stats["halo0"] = *tmpTelemetry
-			log.Println(update.Val)
 		}
 	}
 }
@@ -256,7 +259,7 @@ func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
 
 func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
 	for ifc, tl := range hal.interfaces.stats {
-		err := v(ifc, &tl)
+		err := v(ifc, tl)
 		if err != nil {
 			return err
 		}
