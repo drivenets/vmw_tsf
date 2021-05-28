@@ -19,6 +19,41 @@ import (
 	flowmessage "github.com/cloudflare/goflow/v3/pb"
 )
 
+type FlowAggregate struct {
+	start time.Time
+
+	key   *FlowKey
+	inIf  string
+	outIf string
+
+	packets uint64
+	bytes   uint64
+}
+
+func (agg *FlowAggregate) ToTelemetry() *FlowTelemetry {
+	millis := uint64(time.Since(agg.start).Milliseconds())
+	if millis < 1 {
+		millis = 1
+	}
+	return &FlowTelemetry{
+		// Rate
+		RxRatePps: (((agg.packets + 1) * 1000) - 1) / millis,
+		TxRatePps: 0,
+		RxRateBps: (((agg.bytes + 1) * 1000) - 1) / millis,
+		TxRateBps: 0,
+
+		// Total counters
+		RxTotalPkts:  agg.packets,
+		TxTotalPkts:  0,
+		RxTotalBytes: agg.bytes,
+		TxTotalBytes: 0,
+
+		// Interfaces
+		IngressIf: agg.inIf,
+		EgressIf:  agg.outIf,
+	}
+}
+
 type DnHalImpl struct {
 	mutex       sync.Mutex
 	initialized bool
@@ -30,7 +65,10 @@ type DnHalImpl struct {
 		stats          map[string]*InterfaceTelemetry
 		sampleInterval int
 	}
-	nf *gfu.StateNetFlow
+	flows struct {
+		state     *gfu.StateNetFlow
+		aggregate map[string]*FlowAggregate
+	}
 }
 
 var hal = &DnHalImpl{}
@@ -44,31 +82,13 @@ func NewDnHal() DnHal {
 
 const DRIVENETS_GRPC_ADDR = "localhost:50051"
 
-func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
-	for _, msg := range update {
-		key := FlowKey{
-			Protocol: FlowProto(msg.Proto),
-			SrcAddr:  msg.SrcAddr,
-			DstAddr:  msg.DstAddr,
-			SrcPort:  uint16(msg.SrcPort),
-			DstPort:  uint16(msg.DstPort),
-		}
-
-		var inIf string
-		var outIf string
-		var ok bool
-
-		if inIf, ok = hal.interfaces.netflow2upper[msg.InIf]; !ok {
-			inIf = "N/A"
-		}
-		if outIf, ok = hal.interfaces.netflow2upper[msg.OutIf]; !ok {
-			outIf = "N/A"
-		}
-
-		fmt.Println(key,
-			"bw:", msg.Bytes, msg.Packets,
-			"ifc:", inIf, outIf)
+func (hal *DnHalImpl) InitFlows() {
+	hal.flows.state = &gfu.StateNetFlow{
+		Transport: hal,
+		Logger:    log.StandardLogger(),
 	}
+
+	hal.flows.aggregate = make(map[string]*FlowAggregate)
 }
 
 func (hal *DnHalImpl) Init() {
@@ -85,10 +105,7 @@ func (hal *DnHalImpl) Init() {
 
 	go monitorInterfaces()
 
-	hal.nf = &gfu.StateNetFlow{
-		Transport: hal,
-		Logger:    log.StandardLogger(),
-	}
+	hal.InitFlows()
 
 	go monitorFlows()
 
@@ -254,7 +271,7 @@ func monitorInterfaces() {
 			//log.Println(proto.MarshalTextString(update.Val))
 			//log.Println(update.Path.GetElem()[len(update.Path.GetElem())-1].Name)
 
-			log.Printf("Update content: %v\n", update.Val)
+			//log.Printf("Update content: %v\n", update.Val)
 			lastPathElement := update.Path.GetElem()[len(update.Path.GetElem())-1].Name
 
 			if lastPathElement == "interface-speed" {
@@ -263,7 +280,7 @@ func monitorInterfaces() {
 					log.Panic(err)
 				}
 				hal.interfaces.stats[dnIf].Speed = uint64(s)
-				log.Printf("Updated interface speed: %s\n", s)
+				//log.Printf("Updated interface speed: %s\n", s)
 			} else {
 				ifc := hal.interfaces.stats[dnIf]
 				err = json.Unmarshal(update.Val.GetJsonVal(), ifc)
@@ -271,7 +288,7 @@ func monitorInterfaces() {
 					log.Fatalf("Failed to unmarshal: %s. Reason: %v",
 						update.Val.GetJsonVal(), err)
 				}
-				log.Printf("Updated interface counters: %v\n", *ifc)
+				//log.Printf("Updated interface counters: %v\n", *ifc)
 			}
 		}
 	}
@@ -279,16 +296,10 @@ func monitorInterfaces() {
 
 func monitorFlows() {
 
-	// TODO: grab snmpifindex (used inside netflow)
-	err := hal.nf.FlowRoutine(1, "0.0.0.0", 2055, true)
+	err := hal.flows.state.FlowRoutine(1, "0.0.0.0", 2055, true)
 	if err != nil {
 		log.Fatalf("Fatal error: could not monitor flows (%v)", err)
 	}
-}
-
-func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
-	log.Fatal("NOT IMPLEMENTED")
-	return nil
 }
 
 func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
@@ -301,7 +312,66 @@ func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
 	return nil
 }
 
+func (fk *FlowKey) AsKey() string {
+	return fmt.Sprintf(
+		"%d:%s:%s:%d:%d", fk.Protocol,
+		fk.SrcAddr, fk.DstAddr,
+		fk.SrcPort, fk.DstPort)
+}
+
+func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
+	for _, msg := range update {
+		fk := &FlowKey{
+			Protocol: FlowProto(msg.Proto),
+			SrcAddr:  msg.SrcAddr,
+			DstAddr:  msg.DstAddr,
+			SrcPort:  uint16(msg.SrcPort),
+			DstPort:  uint16(msg.DstPort),
+		}
+
+		var inIf string
+		var outIf string
+		var ok bool
+
+		if inIf, ok = hal.interfaces.netflow2upper[msg.InIf]; !ok {
+			inIf = "N/A"
+		}
+		if outIf, ok = hal.interfaces.netflow2upper[msg.OutIf]; !ok {
+			outIf = "N/A"
+		}
+
+		// Update flows aggregate
+		var agg *FlowAggregate
+		key := fk.AsKey()
+		aggregate := hal.flows.aggregate
+		if agg, ok = aggregate[key]; ok {
+			agg.bytes += msg.Bytes
+			agg.packets += msg.Packets
+		} else {
+			agg = &FlowAggregate{
+				start:   time.Now(),
+				key:     fk,
+				inIf:    inIf,
+				outIf:   outIf,
+				bytes:   msg.Bytes,
+				packets: msg.Packets,
+			}
+			aggregate[key] = agg
+		}
+	}
+}
+
 func (*DnHalImpl) GetFlows(v FlowVisitor) error {
+	aggregate := make(map[string]*FlowAggregate)
+	// Swap current active with empty one
+	aggregate, hal.flows.aggregate = hal.flows.aggregate, aggregate
+	for _, agg := range aggregate {
+		v(agg.key, agg.ToTelemetry())
+	}
+	return nil
+}
+
+func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	log.Fatal("NOT IMPLEMENTED")
 	return nil
 }
