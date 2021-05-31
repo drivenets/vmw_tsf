@@ -24,12 +24,24 @@ func (c *TwampConnection) Close() {
 	c.GetConnection().Close()
 }
 
-func (c *TwampConnection) LocalAddr() net.Addr {
-	return c.conn.LocalAddr()
+func (c *TwampConnection) LocalAddrUint32() uint32 {
+	localAddr := c.conn.LocalAddr().String()
+	local, _, err := net.SplitHostPort(localAddr)
+	if err != nil {
+		return 0
+	}
+	ip := net.ParseIP(local).To4()
+	return binary.BigEndian.Uint32(ip)
 }
 
-func (c *TwampConnection) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
+func (c *TwampConnection) RemoteAddrUint32() uint32 {
+	remoteAddr := c.conn.RemoteAddr().String()
+	remote, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return 0
+	}
+	ip := net.ParseIP(remote).To4()
+	return binary.BigEndian.Uint32(ip)
 }
 
 /*
@@ -115,6 +127,8 @@ const (
 	command         = 0
 	senderPort      = 12
 	receiverPort    = 14
+	senderAddr      = 16
+	receiverAddr    = 32
 	paddingLength   = 64
 	startTime       = 68
 	timeout         = 76
@@ -123,23 +137,25 @@ const (
 
 type RequestTwSession []byte
 
-func (b RequestTwSession) Encode(c TwampSessionConfig) {
+func (b RequestTwSession) Encode(config TwampSessionConfig, c *TwampConnection) {
 	start_time := NewTwampTimestamp(time.Now())
 	b[command] = byte(5)
 	binary.BigEndian.PutUint16(b[senderPort:], 6666)
-	binary.BigEndian.PutUint16(b[receiverPort:], uint16(c.Port))
-	binary.BigEndian.PutUint32(b[paddingLength:], uint32(c.Padding))
+	binary.BigEndian.PutUint16(b[receiverPort:], uint16(config.Port))
+	binary.BigEndian.PutUint32(b[senderAddr:], c.LocalAddrUint32())
+	binary.BigEndian.PutUint32(b[receiverAddr:], c.RemoteAddrUint32())
+	binary.BigEndian.PutUint32(b[paddingLength:], uint32(config.Padding))
 	binary.BigEndian.PutUint32(b[startTime:], start_time.Integer)
 	binary.BigEndian.PutUint32(b[startTime+4:], start_time.Fraction)
-	binary.BigEndian.PutUint32(b[timeout:], uint32(c.Timeout))
+	binary.BigEndian.PutUint32(b[timeout:], uint32(config.Timeout))
 	binary.BigEndian.PutUint32(b[timeout+4:], 0)
-	binary.BigEndian.PutUint32(b[typePDescriptor:], uint32(c.TOS))
+	binary.BigEndian.PutUint32(b[typePDescriptor:], uint32(config.TOS))
 }
 
 func (c *TwampConnection) CreateSession(config TwampSessionConfig) (*TwampSession, error) {
 	var pdu RequestTwSession = make(RequestTwSession, 112)
 
-	pdu.Encode(config)
+	pdu.Encode(config, c)
 
 	c.GetConnection().Write(pdu)
 
