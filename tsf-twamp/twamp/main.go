@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/tcaine/twamp"
+	"github.com/drivenets/vmw_tsf/tsf-twamp"
 	"log"
 	"os"
 )
