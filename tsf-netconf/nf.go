@@ -1,0 +1,218 @@
+//package tsf_netconf
+package main
+
+import (
+	"fmt"
+	"log"
+	"net"
+	"os"
+
+	"github.com/Juniper/go-netconf/netconf"
+)
+
+var GetAccessListByName = `
+<get-config>
+    <source>
+        <running />
+    </source>
+    <filter>
+        <drivenets-top xmlns:dn-access-control-list="http://drivenets.com/ns/yang/dn-access-control-list">
+            <dn-access-control-list:access-lists>
+                <ipv4>
+                    <access-list>
+                        <name>%s</name>
+                    </access-list>
+                </ipv4>
+            </dn-access-control-list:access-lists>
+        </drivenets-top>
+    </filter>
+</get-config>
+`
+
+var GetInterfaceByName = `
+<get-config>
+    <source>
+        <running />
+    </source>
+    <filter>
+        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top" xmlns:dn-if="http://drivenets.com/ns/yang/dn-interfaces">
+            <dn-if:interfaces>
+                <dn-if:interface dn-if:name="%s" />
+            </dn-if:interfaces>
+        </drivenets-top>
+    </filter>
+</get-config>
+`
+
+var AccessListConfig = `
+<edit-config>
+    <target>
+        <candidate />
+    </target>
+    <config>
+        <drivenets-top xmlns:dn-access-control-list="http://drivenets.com/ns/yang/dn-access-control-list">
+            <dn-access-control-list:access-lists>
+                <ipv4>
+                    <access-list>
+                        <rules>
+                            <rule>
+                                <rule-id>%[1]d</rule-id>
+                                <config-items>
+                                    <ipv4-matches>
+                                        <ipv4-acl-match>
+                                            <destination-ipv4>%[2]s</destination-ipv4>
+                                            <source-ipv4>%[3]s</source-ipv4>
+                                        </ipv4-acl-match>
+                                    </ipv4-matches>
+                                    <matches>
+                                        <l4-acl-match>
+                                            <source-port-range></source-port-range>
+                                            <destination-port-range></destination-port-range>
+                                        </l4-acl-match>
+                                    </matches>
+                                    <rule-type>allow</rule-type>
+                                    <protocol>%[4]s</protocol>
+                                </config-items>
+                            </rule>
+                        </rules>
+                        <config-items>
+                            <name>Steering</name>
+                        </config-items>
+                        <name>Steering</name>
+                    </access-list>
+                </ipv4>
+            </dn-access-control-list:access-lists>
+        </drivenets-top>
+    </config>
+</edit-config>
+`
+
+var InterfaceConfig = `
+<edit-config>
+    <target>
+        <candidate />
+    </target>
+    <config>
+        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top" xmlns:dn-if="http://drivenets.com/ns/yang/dn-interfaces">
+           <dn-if:interfaces>
+               <dn-if:interface>
+                    <dn-if:name>%s</dn-if:name>
+                    <config-items>
+                        <description>halo again</description>
+                    </config-items>
+                    <acl-attached><interface-ipv4-access-lists><interface-ipv4-access-list><global-acl>false</global-acl><config-items><global-acl>false</global-acl><direction>in</direction><name>Steering</name></config-items><direction>in</direction></interface-ipv4-access-list></interface-ipv4-access-lists></acl-attached>
+               </dn-if:interface>
+           </dn-if:interfaces>
+        </drivenets-top>
+    </config>
+</edit-config>
+`
+
+//var ShowSystemRequest = `
+//<show-system xmlns="http://drivenets.com/ns/yang/dn-rpc">
+//  <result />
+//</show-system>
+//`
+
+var Commit = "<commit />"
+
+// SystemInformation provides a representation of the system-information container
+//type SystemInformation struct {
+//  HardwareModel string `xml:"system-information>hardware-model"`
+//  OsName        string `xml:"system-information>os-name"`
+//  OsVersion     string `xml:"system-information>os-version"`
+//  SerialNumber  string `xml:"system-information>serial-number"`
+//  HostName      string `xml:"system-information>host-name"`
+//}
+
+type FlowKey struct {
+	Protocol string
+	SrcAddr  net.IP
+	DstAddr  net.IP
+	SrcPort  uint16
+	DstPort  uint16
+}
+
+type ServerConf struct {
+	netconfUser     string
+	netconfPassword string
+	netconfServer   string
+}
+
+func Steer (fk FlowKey, ifName string) error {
+    log := log.New(os.Stderr, "netconf ", 1)
+    netconf.SetLog(netconf.NewStdLog(log, netconf.LogDebug))
+    session, err := netconf.DialSSH(
+        nc.netconfServer,
+        netconf.SSHConfigPassword(nc.netconfUser, nc.netconfPassword))
+    if err != nil {
+        return err
+    }
+    defer session.Close()
+
+    createAcl := fmt.Sprintf(AccessListConfig,
+        10,
+        string(fk.SrcAddr),
+        string(fk.DstAddr),
+        fk.Protocol)
+    _, err = session.Exec(netconf.RawMethod(createAcl))
+    if err != nil {
+        return err
+    }
+
+    attachAclToIface := fmt.Sprintf(InterfaceConfig, ifName)
+    _, err = session.Exec(netconf.RawMethod(attachAclToIface))
+    if err != nil {
+        return err
+    }
+
+    _, err = session.Exec(netconf.RawMethod(Commit))
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
+
+var nc = &ServerConf{}
+
+func main() {
+    var ok bool
+
+	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
+		nc.netconfUser = "dnroot"
+	}
+
+	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
+		nc.netconfPassword = "dnroot"
+	}
+
+	if nc.netconfServer, ok = os.LookupEnv("NETCONF_SERVER"); !ok {
+		nc.netconfServer = "localhost"
+	}
+	haloInterface0 := "ge100-0/0/39"
+	//accessListInitId := 10
+	//accessListName := "Steering"
+	fk := FlowKey{
+		Protocol: "any",
+		SrcAddr:  []byte("10.0.0.1/32"),
+		DstAddr:  []byte("200.200.200.1/32"),
+		SrcPort:  0,
+		DstPort:  0,
+	}
+
+	err := Steer(fk, haloInterface0)
+    if err != nil {
+        panic(err)
+    }
+	////systemReply, err := session.Exec(netconf.RawMethod(ShowSystemRequest))
+	////if err != nil {
+	////  panic(err)
+	////}
+	////fmt.Printf("Raw Reply: %+v\n", systemReply)
+
+	////_, err = session.Exec(netconf.RawMethod(fmt.Sprintf(GetInterfaceByName, haloInterface0)))
+	////if err != nil {
+	//// panic(err)
+	////}
+}
