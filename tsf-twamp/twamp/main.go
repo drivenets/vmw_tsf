@@ -15,7 +15,8 @@ func main() {
 	size := flag.Int("size", 42, "Size of request packets (0..65468 bytes)")
 	tos := flag.Int("tos", 0, "IP type-of-service value (0..255)")
 	wait := flag.Int("wait", 1, "Maximum wait time after sending final packet (seconds)")
-	port := flag.Int("port", 6666, "UDP port to send request packets")
+	sport := flag.Int("sport", 10001, "UDP port to send request packets")
+	rport := flag.Int("rport", 10002, "UDP port to receive request packets")
 	mode := flag.String("mode", "ping", "Mode of operation (ping, json)")
 
 	flag.Parse()
@@ -38,10 +39,11 @@ func main() {
 
 	session, err := connection.CreateSession(
 		twamp.TwampSessionConfig{
-			Port:    *port,
-			Timeout: *wait,
-			Padding: *size,
-			TOS:     *tos,
+			SenderPort:   *sport,
+			ReceiverPort: *rport,
+			Timeout:      *wait,
+			Padding:      *size,
+			TOS:          *tos,
 		},
 	)
 	if err != nil {
