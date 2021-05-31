@@ -84,6 +84,10 @@ func (s *TwampSession) CreateTest() (*TwampTest, error) {
 	}
 
 	conn, err := net.DialUDP("udp", localAddr, remoteAddr)
+	if err != nil {
+		return nil, err
+	}
+
 	test.SetConnection(conn)
 
 	if err != nil {
