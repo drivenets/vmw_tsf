@@ -56,5 +56,17 @@ func main() {
 			fmt.Println("(none)")
 		}
 		time.Sleep(10 * time.Second)
+
+		fk := hal.FlowKey{
+			Protocol: 0,
+			SrcAddr:  []byte("10.0.0.1/32"),
+			DstAddr:  []byte("200.200.200.1/32"),
+			SrcPort:  0,
+			DstPort:  0,
+		}
+		err := h.Steer(&fk, "ge100-0/0/39")
+		if err != nil {
+			panic(err)
+		}
 	}
 }
