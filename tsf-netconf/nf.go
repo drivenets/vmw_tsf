@@ -139,6 +139,40 @@ type ServerConf struct {
 	netconfServer   string
 }
 
+
+
+var nc = &ServerConf{}
+var accessListInitId = 10
+
+func main() {
+    var ok bool
+
+	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
+		nc.netconfUser = "dnroot"
+	}
+
+	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
+		nc.netconfPassword = "dnroot"
+	}
+
+	if nc.netconfServer, ok = os.LookupEnv("NETCONF_SERVER"); !ok {
+		nc.netconfServer = "localhost"
+	}
+	haloInterface0 := "ge100-0/0/39"
+	fk := FlowKey{
+		Protocol: "any",
+		SrcAddr:  []byte("10.0.0.1/32"),
+		DstAddr:  []byte("200.200.200.1/32"),
+		SrcPort:  0,
+		DstPort:  0,
+	}
+
+	err := Steer(fk, haloInterface0)
+    if err != nil {
+        panic(err)
+    }
+}
+
 func Steer (fk FlowKey, ifName string) error {
     log := log.New(os.Stderr, "netconf ", 1)
     netconf.SetLog(netconf.NewStdLog(log, netconf.LogDebug))
@@ -151,7 +185,7 @@ func Steer (fk FlowKey, ifName string) error {
     defer session.Close()
 
     createAcl := fmt.Sprintf(AccessListConfig,
-        10,
+        accessListInitId,
         string(fk.SrcAddr),
         string(fk.DstAddr),
         fk.Protocol)
@@ -171,48 +205,6 @@ func Steer (fk FlowKey, ifName string) error {
         return err
     }
 
+    accessListInitId += 10
     return nil
-}
-
-var nc = &ServerConf{}
-
-func main() {
-    var ok bool
-
-	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
-		nc.netconfUser = "dnroot"
-	}
-
-	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
-		nc.netconfPassword = "dnroot"
-	}
-
-	if nc.netconfServer, ok = os.LookupEnv("NETCONF_SERVER"); !ok {
-		nc.netconfServer = "localhost"
-	}
-	haloInterface0 := "ge100-0/0/39"
-	//accessListInitId := 10
-	//accessListName := "Steering"
-	fk := FlowKey{
-		Protocol: "any",
-		SrcAddr:  []byte("10.0.0.1/32"),
-		DstAddr:  []byte("200.200.200.1/32"),
-		SrcPort:  0,
-		DstPort:  0,
-	}
-
-	err := Steer(fk, haloInterface0)
-    if err != nil {
-        panic(err)
-    }
-	////systemReply, err := session.Exec(netconf.RawMethod(ShowSystemRequest))
-	////if err != nil {
-	////  panic(err)
-	////}
-	////fmt.Printf("Raw Reply: %+v\n", systemReply)
-
-	////_, err = session.Exec(netconf.RawMethod(fmt.Sprintf(GetInterfaceByName, haloInterface0)))
-	////if err != nil {
-	//// panic(err)
-	////}
 }
