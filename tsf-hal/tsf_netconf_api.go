@@ -62,7 +62,8 @@ var AccessListConfig = `
                                         </l4-acl-match>
                                     </matches>
                                     <rule-type>allow</rule-type>
-                                    <protocol>%[4]s</protocol>
+                                    <nexthops><nexthop1>%[4]s</nexthop1></nexthops>
+                                    <protocol>%[5]s</protocol>
                                 </config-items>
                             </rule>
                         </rules>

@@ -401,6 +401,7 @@ func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		accessListInitId,
 		string(fk.SrcAddr),
 		string(fk.DstAddr),
+		string(fk.NextHop1),
 		"any")
 	_, err = session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {

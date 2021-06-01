@@ -13,6 +13,7 @@ type FlowKey struct {
 	Protocol FlowProto
 	SrcAddr  net.IP
 	DstAddr  net.IP
+	NextHop1 net.IP
 	SrcPort  uint16
 	DstPort  uint16
 }
