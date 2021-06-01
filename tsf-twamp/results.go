@@ -44,6 +44,7 @@ type PingResultStats struct {
 	Transmitted int           `json:"tx"`
 	Received    int           `json:"rx"`
 	Loss        float64       `json:"loss"`
+	Jitter      time.Duration `json:"jitter"`
 }
 
 type PingResults struct {
@@ -58,4 +59,21 @@ func (r *PingResults) stdDev(mean time.Duration) time.Duration {
 	}
 	variance := total / float64(len(r.Results)-1)
 	return time.Duration(math.Sqrt(variance))
+}
+
+func (r *PingResults) jitter() time.Duration {
+	var lastrtt, total float64
+
+	if len(r.Results) < 2 {
+		return 0
+	}
+
+	for i, result := range r.Results {
+		rtt := float64(result.GetRTT())
+		if i != 0 {
+			total += math.Abs(lastrtt - rtt)
+		}
+		lastrtt = rtt
+	}
+	return time.Duration(total / float64(len(r.Results) - 1))
 }

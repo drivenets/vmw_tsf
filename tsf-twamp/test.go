@@ -280,6 +280,7 @@ func (t *TwampTest) RunX(count int) *PingResults {
 	Stats.Avg = time.Duration(int64(TotalRTT) / int64(count))
 	Stats.Loss = float64(float64(Stats.Transmitted-Stats.Received)/float64(Stats.Transmitted)) * 100.0
 	Stats.StdDev = Results.stdDev(Stats.Avg)
+	Stats.Jitter = Results.jitter()
 
 	return Results
 }
