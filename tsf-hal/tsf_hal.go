@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/Juniper/go-netconf/netconf"
+	pb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/ygot/ygot"
+	"google.golang.org/grpc"
+	//"log"
 	"os"
 	"strconv"
 	"sync"
 	"time"
-
-	pb "github.com/openconfig/gnmi/proto/gnmi"
-	"github.com/openconfig/ygot/ygot"
-	"google.golang.org/grpc"
 
 	gfu "github.com/cloudflare/goflow/v3/utils"
 	log "github.com/sirupsen/logrus"
@@ -80,7 +81,7 @@ func NewDnHal() DnHal {
 	return hal
 }
 
-const DRIVENETS_GRPC_ADDR = "localhost:50051"
+const DRIVENETS_GRPC_ADDR = "localhost"
 
 func (hal *DnHalImpl) InitFlows() {
 	hal.flows.state = &gfu.StateNetFlow{
@@ -100,6 +101,7 @@ func (hal *DnHalImpl) Init() {
 	if hal.grpcAddr, ok = os.LookupEnv("GRPC_ADDR"); !ok {
 		hal.grpcAddr = DRIVENETS_GRPC_ADDR
 	}
+	hal.grpcAddr = hal.grpcAddr + ":50051"
 
 	hal.InitInterfaces()
 
@@ -372,6 +374,52 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 }
 
 func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
-	log.Fatal("NOT IMPLEMENTED")
+	var ok bool
+	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
+		nc.netconfUser = "dnroot"
+	}
+	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
+		nc.netconfPassword = "dnroot"
+	}
+	if nc.netconfHost, ok = os.LookupEnv("GRPC_ADDR"); !ok {
+		nc.netconfHost = "localhost"
+	}
+	//log := log.StandardLogger()
+	//log.SetLevel())
+	//log := log.New(os.Stderr, "netconf ", 1)
+	//netconf.SetLog(netconf.NewStdLog(log, netconf.LogDebug))
+	session, err := netconf.DialSSH(
+		nc.netconfHost,
+		netconf.SSHConfigPassword(nc.netconfUser, nc.netconfPassword))
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	log.Printf("Adding acl: %s:%d -> %s:%d", string(fk.SrcAddr), fk.SrcPort, string(fk.DstAddr), fk.DstPort)
+	createAcl := fmt.Sprintf(AccessListConfig,
+		accessListInitId,
+		string(fk.SrcAddr),
+		string(fk.DstAddr),
+		"any")
+	_, err = session.Exec(netconf.RawMethod(createAcl))
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Attaching rule %d to interface %s", accessListInitId, nh)
+	attachAclToIface := fmt.Sprintf(InterfaceConfig, nh)
+	_, err = session.Exec(netconf.RawMethod(attachAclToIface))
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Committing changes")
+	_, err = session.Exec(netconf.RawMethod(Commit))
+	if err != nil {
+		return err
+	}
+
+	accessListInitId += 10
 	return nil
 }
