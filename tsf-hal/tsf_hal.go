@@ -20,6 +20,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	flowmessage "github.com/cloudflare/goflow/v3/pb"
+
+	twamp "github.com/drivenets/vmw_tsf/tsf-twamp"
 )
 
 type FlowAggregate struct {
@@ -62,6 +64,8 @@ type DnHalImpl struct {
 	initialized bool
 	grpcAddr    string
 	interfaces  struct {
+		twampAddr      map[string]string
+		twampPort      map[string]int
 		lower2upper    map[string]string
 		upper2lower    map[string]string
 		netflow2upper  map[uint32]string
@@ -122,9 +126,13 @@ const HALO_INTERFACES_COUNT = 2
 
 func (hal *DnHalImpl) InitInterfaces() {
 	var dnIf string
+	var twamp string
+	var twampPort string
 	var haloIf string
 	var ok bool
 
+	hal.interfaces.twampAddr = make(map[string]string)
+	hal.interfaces.twampPort = make(map[string]int)
 	hal.interfaces.lower2upper = make(map[string]string)
 	hal.interfaces.upper2lower = make(map[string]string)
 	hal.interfaces.stats = make(map[string]*InterfaceTelemetry)
@@ -146,14 +154,26 @@ func (hal *DnHalImpl) InitInterfaces() {
 		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
 			dnIf = fmt.Sprintf("ge100-0/0/%d", idx)
 		}
-		var NextHop1 string
-		if NextHop1, ok = os.LookupEnv(fmt.Sprintf("HALO%d_NEXT_HOP", idx)); !ok {
+
+		var nextHop1 string
+		if nextHop1, ok = os.LookupEnv(fmt.Sprintf("HALO%d_NEXT_HOP", idx)); !ok {
 			log.Fatalf("Can not find nexthop in HALO%d_IFACE", idx)
 		}
+
+		if twamp, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP", idx)); !ok {
+			twamp = "0.0.0.0:862"
+			log.Error("Failed to get TWAMP server for: ", dnIf)
+		}
+		if twampPort, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP_PORT", idx)); !ok {
+			twampPort = "10001"
+			log.Error("Failed to get TWAMP server UDP ports for: ", dnIf)
+		}
+		hal.interfaces.twampAddr[haloIf] = twamp
+		hal.interfaces.twampPort[haloIf], _ = strconv.Atoi(twampPort)
 		hal.interfaces.lower2upper[dnIf] = haloIf
 		hal.interfaces.upper2lower[haloIf] = dnIf
 		hal.interfaces.stats[haloIf] = &InterfaceTelemetry{}
-		hal.interfaces.nextHop[haloIf] = []byte(NextHop1)
+		hal.interfaces.nextHop[haloIf] = []byte(nextHop1)
 	}
 
 	for haloIf, dnIf = range hal.interfaces.upper2lower {
@@ -266,6 +286,43 @@ func monitorInterfaces() {
 		log.Fatalf("Failed to subscribe: %v", err)
 	}
 
+	twampTests := make(map[string]*twamp.TwampTest)
+	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
+		haloIf := fmt.Sprintf("halo%d", idx)
+		twampAddr := hal.interfaces.twampAddr[haloIf]
+		twampPort := hal.interfaces.twampPort[haloIf]
+
+		twampClient := twamp.NewClient()
+		twampConn, err := twampClient.Connect(twampAddr)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		defer twampConn.Close()
+
+		twampSession, err := twampConn.CreateSession(
+			twamp.TwampSessionConfig{
+				SenderPort:   twampPort,
+				ReceiverPort: twampPort + 1,
+				Timeout:      1,
+				Padding:      42,
+				TOS:          0,
+			},
+		)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		defer twampSession.Stop()
+
+		twampTest, ok := twampSession.CreateTest()
+		if ok != nil {
+			log.Error(ok)
+			continue
+		}
+		twampTests[haloIf] = twampTest
+	}
+
 	for {
 		response, err := sc.Recv()
 		if err != nil {
@@ -273,10 +330,10 @@ func monitorInterfaces() {
 		}
 
 		for _, update := range response.GetUpdate().Update {
-			var dnIf string
+			var haloIf string
 			for _, pEl := range update.Path.GetElem() {
 				if pEl.Name == "interface" {
-					dnIf = hal.interfaces.lower2upper[pEl.Key["name"]]
+					haloIf = hal.interfaces.lower2upper[pEl.Key["name"]]
 				}
 			}
 			//log.Println(string(update.Val.GetJsonVal()))
@@ -291,16 +348,23 @@ func monitorInterfaces() {
 				if err != nil {
 					log.Panic(err)
 				}
-				hal.interfaces.stats[dnIf].Speed = uint64(s)
+				hal.interfaces.stats[haloIf].Speed = uint64(s)
 				//log.Printf("Updated interface speed: %s\n", s)
 			} else {
-				ifc := hal.interfaces.stats[dnIf]
+				ifc := hal.interfaces.stats[haloIf]
 				err = json.Unmarshal(update.Val.GetJsonVal(), ifc)
 				if err != nil {
 					log.Fatalf("Failed to unmarshal: %s. Reason: %v",
 						update.Val.GetJsonVal(), err)
 				}
 				//log.Printf("Updated interface counters: %v\n", *ifc)
+			}
+
+			if twampTest, ok := twampTests[haloIf]; ok {
+				ifc := hal.interfaces.stats[haloIf]
+				results := twampTest.RunX(5)
+				ifc.Link.Delay = float64(results.Stat.Avg) / float64(time.Millisecond)
+				ifc.Link.Jitter = float64(results.Stat.Jitter) / float64(time.Millisecond)
 			}
 		}
 	}

@@ -2,9 +2,12 @@ module github.com/drivenets/vmw_tsf/tsf-hal
 
 go 1.16
 
+replace github.com/drivenets/vmw_tsf/tsf-twamp => ../tsf-twamp
+
 require (
 	github.com/Juniper/go-netconf v0.1.1
 	github.com/cloudflare/goflow/v3 v3.4.2
+	github.com/drivenets/vmw_tsf/tsf-twamp v0.0.0-00010101000000-000000000000
 	github.com/openconfig/gnmi v0.0.0-20210525213403-320426956c8a
 	github.com/openconfig/ygot v0.10.10
 	github.com/sirupsen/logrus v1.8.1
