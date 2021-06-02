@@ -57,22 +57,16 @@ func main() {
 		}
 		time.Sleep(10 * time.Second)
 
-		var NextHop1 string
-		var ok bool
-		if NextHop1, ok = os.LookupEnv("NEXT_HOP1"); !ok {
-			NextHop1 = "1.2.3.4"
-		}
-		fk := hal.FlowKey{
-			Protocol: 0,
-			SrcAddr:  []byte("10.0.0.1/32"),
-			DstAddr:  []byte("200.200.200.1/32"),
-			NextHop1: []byte(NextHop1),
-			SrcPort:  0,
-			DstPort:  0,
-		}
-		err := h.Steer(&fk, "ge100-0/0/39")
-		if err != nil {
-			panic(err)
-		}
+		//fk := hal.FlowKey{
+		//	Protocol: 0,
+		//	SrcAddr:  []byte("10.0.0.1/32"),
+		//	DstAddr:  []byte("200.200.200.1/32"),
+		//	SrcPort:  0,
+		//	DstPort:  0,
+		//}
+		//err := h.Steer(&fk, "halo1")
+		//if err != nil {
+		//	panic(err)
+		//}
 	}
 }

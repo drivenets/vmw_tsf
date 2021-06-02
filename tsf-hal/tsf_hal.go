@@ -8,6 +8,8 @@ import (
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
 	"google.golang.org/grpc"
+	"net"
+
 	//"log"
 	"os"
 	"strconv"
@@ -65,6 +67,7 @@ type DnHalImpl struct {
 		netflow2upper  map[uint32]string
 		stats          map[string]*InterfaceTelemetry
 		sampleInterval int
+		nextHop		map[string]net.IP
 	}
 	flows struct {
 		state     *gfu.StateNetFlow
@@ -126,6 +129,8 @@ func (hal *DnHalImpl) InitInterfaces() {
 	hal.interfaces.upper2lower = make(map[string]string)
 	hal.interfaces.stats = make(map[string]*InterfaceTelemetry)
 	hal.interfaces.netflow2upper = make(map[uint32]string)
+	hal.interfaces.nextHop = make(map[string]net.IP)
+
 
 	var interval string
 	hal.interfaces.sampleInterval = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
@@ -141,9 +146,14 @@ func (hal *DnHalImpl) InitInterfaces() {
 		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
 			dnIf = fmt.Sprintf("ge100-0/0/%d", idx)
 		}
+		var NextHop1 string
+		if NextHop1, ok = os.LookupEnv(fmt.Sprintf("HALO%d_NEXT_HOP", idx)); !ok {
+			log.Fatalf("Can not find nexthop in HALO%d_IFACE", idx)
+		}
 		hal.interfaces.lower2upper[dnIf] = haloIf
 		hal.interfaces.upper2lower[haloIf] = dnIf
 		hal.interfaces.stats[haloIf] = &InterfaceTelemetry{}
+		hal.interfaces.nextHop[haloIf] = []byte(NextHop1)
 	}
 
 	for haloIf, dnIf = range hal.interfaces.upper2lower {
@@ -373,7 +383,7 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 	return nil
 }
 
-func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
+func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	var ok bool
 	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
 		nc.netconfUser = "dnroot"
@@ -396,20 +406,21 @@ func (*DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	}
 	defer session.Close()
 
+	internalIface := hal.interfaces.upper2lower[nh]
 	log.Printf("Adding acl: %s:%d -> %s:%d", string(fk.SrcAddr), fk.SrcPort, string(fk.DstAddr), fk.DstPort)
 	createAcl := fmt.Sprintf(AccessListConfig,
 		accessListInitId,
 		string(fk.SrcAddr),
 		string(fk.DstAddr),
-		string(fk.NextHop1),
+		string(hal.interfaces.nextHop[nh]),
 		"any")
 	_, err = session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Attaching rule %d to interface %s", accessListInitId, nh)
-	attachAclToIface := fmt.Sprintf(InterfaceConfig, nh)
+	log.Printf("Attaching rule %d to interface %s", accessListInitId, internalIface)
+	attachAclToIface := fmt.Sprintf(InterfaceConfig, internalIface)
 	_, err = session.Exec(netconf.RawMethod(attachAclToIface))
 	if err != nil {
 		return err
