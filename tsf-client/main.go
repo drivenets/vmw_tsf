@@ -10,7 +10,9 @@ import (
 )
 
 func main() {
-	h := hal.NewDnHal()
+	cleaOldAcl := true
+	h := hal.NewDnHal(cleaOldAcl)
+
 
 	for {
 		fmt.Println()
