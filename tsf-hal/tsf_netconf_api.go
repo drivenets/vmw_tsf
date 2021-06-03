@@ -35,6 +35,67 @@ package hal
 //</get-config>
 //`
 
+var ClearACLBucket = `
+  <edit-config>
+    <target>
+      <candidate/>
+    </target>
+    <config>
+      <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+        <access-lists xmlns="http://drivenets.com/ns/yang/dn-access-control-list">
+          <ipv4>
+            <access-list>
+              <name>Steering</name>
+				<rules xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
+				</rules>
+            </access-list>
+          </ipv4>
+        </access-lists>
+      </drivenets-top>
+    </config>
+  </edit-config>
+`
+
+var XMLAclDelete = `
+  <edit-config>
+    <target>
+      <candidate/>
+    </target>
+    <config>
+      <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+        <access-lists xmlns="http://drivenets.com/ns/yang/dn-access-control-list">
+          <ipv4>
+            <access-list xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
+              <name>%s</name>
+            </access-list>
+          </ipv4>
+        </access-lists>
+      </drivenets-top>
+    </config>
+  </edit-config>
+`
+
+var XMLAclDetach = `
+<edit-config>
+    <target>
+        <candidate />
+    </target>
+    <config>
+        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top" xmlns:dn-if="http://drivenets.com/ns/yang/dn-interfaces">
+           <dn-if:interfaces>
+               <dn-if:interface>
+                    <dn-if:name>%s</dn-if:name>
+                    <acl-attached>
+                        <interface-ipv4-access-lists xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
+                        </interface-ipv4-access-lists>
+                    </acl-attached>
+               </dn-if:interface>
+           </dn-if:interfaces>
+        </drivenets-top>
+    </config>
+</edit-config>
+`
+
 var AccessListConfig = `
 <edit-config>
     <target>
@@ -111,7 +172,7 @@ var Commit = "<commit />"
 type ServerConf struct {
 	netconfUser     string
 	netconfPassword string
-	netconfHost   string
+	netconfHost     string
 }
 
 var nc = &ServerConf{}
