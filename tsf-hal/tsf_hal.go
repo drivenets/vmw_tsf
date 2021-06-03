@@ -7,8 +7,10 @@ import (
 	"github.com/Juniper/go-netconf/netconf"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
+	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
 	"net"
+	"strings"
 
 	//"log"
 	"os"
@@ -71,7 +73,7 @@ type DnHalImpl struct {
 		netflow2upper  map[uint32]string
 		stats          map[string]*InterfaceTelemetry
 		sampleInterval int
-		nextHop		map[string]net.IP
+		nextHop        map[string]net.IP
 	}
 	flows struct {
 		state     *gfu.StateNetFlow
@@ -81,9 +83,13 @@ type DnHalImpl struct {
 
 var hal = &DnHalImpl{}
 
-func NewDnHal() DnHal {
+func NewDnHal(cleaOldAcl ...bool) DnHal {
+	cleanAcl := false
+	if len(cleaOldAcl) >= 1 {
+		cleanAcl = cleaOldAcl[0]
+	}
 	if !hal.initialized {
-		hal.Init()
+		hal.Init(cleanAcl)
 	}
 	return hal
 }
@@ -99,7 +105,7 @@ func (hal *DnHalImpl) InitFlows() {
 	hal.flows.aggregate = make(map[string]*FlowAggregate)
 }
 
-func (hal *DnHalImpl) Init() {
+func (hal *DnHalImpl) Init(cleanAcl bool) {
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
 
@@ -112,6 +118,12 @@ func (hal *DnHalImpl) Init() {
 
 	hal.InitInterfaces()
 
+	if cleanAcl == true {
+		err := SteeringAclCleanup()
+		if err != nil {
+			log.Fatalf("failed to cleanup old access lists. Reason: %v", err)
+		}
+	}
 	go monitorInterfaces()
 
 	hal.InitFlows()
@@ -123,6 +135,7 @@ func (hal *DnHalImpl) Init() {
 
 const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 15
 const HALO_INTERFACES_COUNT = 2
+const ACL_NAME = "Steering"
 
 func (hal *DnHalImpl) InitInterfaces() {
 	var dnIf string
@@ -138,7 +151,6 @@ func (hal *DnHalImpl) InitInterfaces() {
 	hal.interfaces.stats = make(map[string]*InterfaceTelemetry)
 	hal.interfaces.netflow2upper = make(map[uint32]string)
 	hal.interfaces.nextHop = make(map[string]net.IP)
-
 
 	var interval string
 	hal.interfaces.sampleInterval = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
@@ -448,27 +460,7 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 }
 
 func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
-	var ok bool
-	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
-		nc.netconfUser = "dnroot"
-	}
-	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
-		nc.netconfPassword = "dnroot"
-	}
-	if nc.netconfHost, ok = os.LookupEnv("GRPC_ADDR"); !ok {
-		nc.netconfHost = "localhost"
-	}
-	//log := log.StandardLogger()
-	//log.SetLevel())
-	//log := log.New(os.Stderr, "netconf ", 1)
-	//netconf.SetLog(netconf.NewStdLog(log, netconf.LogDebug))
-	session, err := netconf.DialSSH(
-		nc.netconfHost,
-		netconf.SSHConfigPassword(nc.netconfUser, nc.netconfPassword))
-	if err != nil {
-		return err
-	}
-	defer session.Close()
+	session := NetConfConnector()
 
 	internalIface := hal.interfaces.upper2lower[nh]
 	log.Printf("Adding acl: %s:%d -> %s:%d", string(fk.SrcAddr), fk.SrcPort, string(fk.DstAddr), fk.DstPort)
@@ -478,7 +470,7 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		string(fk.DstAddr),
 		string(hal.interfaces.nextHop[nh]),
 		"any")
-	_, err = session.Exec(netconf.RawMethod(createAcl))
+	_, err := session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
 		return err
 	}
@@ -498,4 +490,83 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 
 	accessListInitId += 10
 	return nil
+}
+
+//func DeleteAcl(dnIf string) error {
+//	session, err := netconf.DialSSH(
+//		nc.netconfHost,
+//		netconf.SSHConfigPassword(nc.netconfUser, nc.netconfPassword))
+//	if err != nil {
+//		return err
+//	}
+//	defer session.Close()
+//
+//	a := fmt.Sprintf(XMLAclDetach, dnIf)
+//	_, err = session.Exec(netconf.RawMethod(InterfaceConfig))
+//	if err != nil {
+//		return err
+//	}
+//
+//	_, err = session.Exec(netconf.RawMethod(DeleteAccessListByName))
+//	if err != nil {
+//		return err
+//	}
+//
+//	_, err = session.Exec(netconf.RawMethod(Commit))
+//	if err != nil {
+//		return err
+//	}
+//	return nil
+//}
+
+var session *netconf.Session
+
+func SteeringAclCleanup() error {
+	session := NetConfConnector()
+
+	log.Info("removing all rules under Steering bucket if any")
+	_, err := session.Exec(netconf.RawMethod(ClearACLBucket))
+	if err != nil {
+		return err
+	}
+
+	_, err = session.Exec(netconf.RawMethod(Commit))
+	if err != nil {
+		if strings.Contains(err.Error(), "Commit failed: empty commit") {
+			log.Println(err.Error())
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+var netconfSession *netconf.Session
+
+func NetConfConnector () *netconf.Session {
+	var err error
+	var ok bool
+	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
+		nc.netconfUser = "dnroot"
+	}
+	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
+		nc.netconfPassword = "dnroot"
+	}
+	if nc.netconfHost, ok = os.LookupEnv("GRPC_ADDR"); !ok {
+		nc.netconfHost = "localhost"
+	}
+
+	if netconfSession == nil {
+		sshConfig := &ssh.ClientConfig{
+			User:            nc.netconfUser,
+			Auth:            []ssh.AuthMethod{ssh.Password(nc.netconfPassword)},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		}
+		netconfSession, err = netconf.DialSSH(nc.netconfHost, sshConfig)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	//defer netconfSession.Close()
+	return netconfSession
 }
