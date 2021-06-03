@@ -12,5 +12,6 @@ require (
 	github.com/openconfig/ygot v0.10.10
 	github.com/sirupsen/logrus v1.8.1
 	github.com/ziutek/telnet v0.0.0-20180329124119-c3b780dc415b // indirect
+	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073
 	google.golang.org/grpc v1.38.0
 )
