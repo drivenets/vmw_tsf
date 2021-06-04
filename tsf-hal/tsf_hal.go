@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"strings"
+
 	"github.com/Juniper/go-netconf/netconf"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
-	"net"
-	"strings"
 
 	//"log"
 	"os"
@@ -185,7 +186,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 		hal.interfaces.lower2upper[dnIf] = haloIf
 		hal.interfaces.upper2lower[haloIf] = dnIf
 		hal.interfaces.stats[haloIf] = &InterfaceTelemetry{}
-		hal.interfaces.nextHop[haloIf] = []byte(nextHop1)
+		hal.interfaces.nextHop[haloIf] = net.ParseIP(nextHop1)
 	}
 
 	for haloIf, dnIf = range hal.interfaces.upper2lower {
@@ -459,17 +460,25 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 	return nil
 }
 
+func SetAclRuleIndex(idx int) {
+	accessListInitId = idx
+}
+
 func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	session := NetConfConnector()
 
 	internalIface := hal.interfaces.upper2lower[nh]
-	log.Printf("Adding acl: %s:%d -> %s:%d", string(fk.SrcAddr), fk.SrcPort, string(fk.DstAddr), fk.DstPort)
+	log.Printf("Adding acl: %s:%d -> %s:%d nh: %s",
+		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh)
 	createAcl := fmt.Sprintf(AccessListConfig,
 		accessListInitId,
-		string(fk.SrcAddr),
-		string(fk.DstAddr),
-		string(hal.interfaces.nextHop[nh]),
-		"any")
+		fk.Protocol,
+		fk.SrcAddr,
+		fk.SrcPort,
+		fk.DstAddr,
+		fk.DstPort,
+		hal.interfaces.nextHop[nh])
+	log.Printf("NetConf: %s", createAcl)
 	_, err := session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
 		return err
@@ -543,7 +552,7 @@ func SteeringAclCleanup() error {
 
 var netconfSession *netconf.Session
 
-func NetConfConnector () *netconf.Session {
+func NetConfConnector() *netconf.Session {
 	var err error
 	var ok bool
 	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {

@@ -112,19 +112,19 @@ var AccessListConfig = `
                                 <config-items>
                                     <ipv4-matches>
                                         <ipv4-acl-match>
-                                            <destination-ipv4>%[2]s</destination-ipv4>
-                                            <source-ipv4>%[3]s</source-ipv4>
+                                            <destination-ipv4>%[3]s/32</destination-ipv4>
+                                            <source-ipv4>%[5]s/32</source-ipv4>
                                         </ipv4-acl-match>
                                     </ipv4-matches>
                                     <matches>
                                         <l4-acl-match>
-                                            <source-port-range></source-port-range>
-                                            <destination-port-range></destination-port-range>
+                                            <source-port-range><lower-port>%[4]d</lower-port></source-port-range>
+                                            <destination-port-range><lower-port>%[6]d</lower-port></destination-port-range>
                                         </l4-acl-match>
                                     </matches>
                                     <rule-type>allow</rule-type>
-                                    <nexthops><nexthop1>%[4]s</nexthop1></nexthops>
-                                    <protocol>%[5]s</protocol>
+                                    <nexthops><nexthop1>%[7]s</nexthop1></nexthops>
+                                    <protocol>%[2]s</protocol>
                                 </config-items>
                             </rule>
                         </rules>

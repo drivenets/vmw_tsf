@@ -7,8 +7,8 @@ import (
 
 func (p FlowProto) String() string {
 	m := map[FlowProto]string{
-		TCP: "tcp",
-		UDP: "udp",
+		TCP: "tcp(0x06)",
+		UDP: "udp(0x11)",
 	}
 	s, ok := m[p]
 	if ok {
