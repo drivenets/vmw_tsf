@@ -149,6 +149,10 @@ func main() {
 	flag.IntVar(&aclRuleId, "id", 10, "steer rule id")
 	flag.Parse()
 
+	if !(monFlowsOpt || monIfcOpt) {
+		os.Setenv("SKIP_TWAMP", "1")
+	}
+
 	h := hal.NewDnHal(flushSteerOpt)
 	handleSteer(h)
 	if !(monFlowsOpt || monIfcOpt) {
