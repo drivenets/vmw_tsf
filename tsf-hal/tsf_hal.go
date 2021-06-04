@@ -146,7 +146,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 	var twampPort string
 	var ok bool
 
-	hal.interfaces.names = make([]string, HALO_INTERFACES_COUNT)
+	hal.interfaces.names = make([]string, HALO_INTERFACES_COUNT+1)
 	hal.interfaces.twampAddr = make(map[string]string)
 	hal.interfaces.twampPort = make(map[string]int)
 	hal.interfaces.lower2upper = make(map[string]string)
@@ -154,6 +154,20 @@ func (hal *DnHalImpl) InitInterfaces() {
 	hal.interfaces.stats = make(map[string]*InterfaceTelemetry)
 	hal.interfaces.netflow2upper = make(map[uint32]string)
 	hal.interfaces.nextHop = make(map[string]net.IP)
+
+	if haloIf, ok = os.LookupEnv("HALO_LOCAL"); ok {
+		if dnIf, ok = os.LookupEnv("HALO_LOCAL_IFACE"); !ok {
+			log.Fatalf("Missing DN interface for HALO_LOCAL")
+		}
+		hal.interfaces.names[HALO_INTERFACES_COUNT] = haloIf
+		hal.interfaces.twampAddr[haloIf] = ""
+		hal.interfaces.twampPort[haloIf] = 0
+		hal.interfaces.lower2upper[dnIf] = haloIf
+		hal.interfaces.upper2lower[haloIf] = dnIf
+		hal.interfaces.stats[haloIf] = &InterfaceTelemetry{}
+		hal.interfaces.nextHop[haloIf] = net.ParseIP("0.0.0.0")
+	}
+	log.Warn("STATS: ", hal.interfaces.stats)
 
 	var interval string
 	hal.interfaces.sampleInterval = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
@@ -401,6 +415,9 @@ func monitorFlows() {
 
 func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
 	for _, ifc := range hal.interfaces.names {
+		if ifc == "" {
+			continue
+		}
 		err := v(ifc, hal.interfaces.stats[ifc])
 		if err != nil {
 			return err
