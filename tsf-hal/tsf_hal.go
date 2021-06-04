@@ -265,11 +265,11 @@ func subscribeForInterfaceStats(client pb.GNMIClient, ctx context.Context) (pb.G
 					Subscription: []*pb.Subscription{
 						{
 							Path:           speedPath,
-							SampleInterval: uint64(time.Duration(15 * time.Second)),
+							SampleInterval: uint64(time.Duration(hal.interfaces.sampleInterval) * time.Second),
 						},
 						{
 							Path:           countersPath,
-							SampleInterval: uint64(time.Duration(15 * time.Second)),
+							SampleInterval: uint64(time.Duration(hal.interfaces.sampleInterval) * time.Second),
 						},
 					},
 					Mode:     pb.SubscriptionList_STREAM,
@@ -341,6 +341,11 @@ func monitorInterfaces() {
 			log.Fatalf("Failed to get response: %v", err)
 		}
 
+		if response.GetUpdate() == nil {
+			log.Info("GNMI response seems to be empty: ", response)
+			continue
+		}
+
 		for _, update := range response.GetUpdate().Update {
 			var haloIf string
 			for _, pEl := range update.Path.GetElem() {
@@ -348,13 +353,8 @@ func monitorInterfaces() {
 					haloIf = hal.interfaces.lower2upper[pEl.Key["name"]]
 				}
 			}
-			//log.Println(string(update.Val.GetJsonVal()))
-			//log.Println(proto.MarshalTextString(update.Val))
-			//log.Println(update.Path.GetElem()[len(update.Path.GetElem())-1].Name)
 
-			//log.Printf("Update content: %v\n", update.Val)
 			lastPathElement := update.Path.GetElem()[len(update.Path.GetElem())-1].Name
-
 			if lastPathElement == "interface-speed" {
 				s, err := strconv.Atoi(string(update.Val.GetJsonVal()))
 				if err != nil {
