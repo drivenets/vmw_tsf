@@ -304,24 +304,17 @@ func subscribeForInterfaceStats(client pb.GNMIClient, ctx context.Context) (pb.G
 	return sc, nil
 }
 
-func monitorInterfaces() {
-	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		log.Fatalf("Failed to connect: %v", err)
-	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
-	defer cancel()
-
-	client := pb.NewGNMIClient(conn)
-	sc, err := subscribeForInterfaceStats(client, ctx)
-
-	if err != nil {
-		log.Fatalf("Failed to subscribe: %v", err)
+func setupTwampTetst(twampTests map[string]*twamp.TwampTest) {
+	var ok bool
+	var skipTwamp string
+	if skipTwamp, ok = os.LookupEnv("SKIP_TWAMP"); !ok {
+		skipTwamp = "1"
 	}
 
-	twampTests := make(map[string]*twamp.TwampTest)
+	if skipTwamp == "1" {
+		return
+	}
+
 	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
 		haloIf := fmt.Sprintf("halo%d", idx)
 		twampAddr := hal.interfaces.twampAddr[haloIf]
@@ -357,6 +350,27 @@ func monitorInterfaces() {
 		}
 		twampTests[haloIf] = twampTest
 	}
+}
+
+func monitorInterfaces() {
+	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
+	defer cancel()
+
+	client := pb.NewGNMIClient(conn)
+	sc, err := subscribeForInterfaceStats(client, ctx)
+
+	if err != nil {
+		log.Fatalf("Failed to subscribe: %v", err)
+	}
+
+	twampTests := make(map[string]*twamp.TwampTest)
+	setupTwampTetst(twampTests)
 
 	for {
 		response, err := sc.Recv()
@@ -503,7 +517,7 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		fk.DstAddr,
 		fk.DstPort,
 		hal.interfaces.nextHop[nh])
-	log.Printf("NetConf: %s", createAcl)
+	//log.Printf("NetConf: %s", createAcl)
 	_, err := session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
 		return err
