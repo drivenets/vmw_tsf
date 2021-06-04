@@ -1,18 +1,93 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	hal "github.com/drivenets/vmw_tsf/tsf-hal"
 )
 
-func main() {
-	cleaOldAcl := true
-	h := hal.NewDnHal(cleaOldAcl)
+var monFlowsOpt bool
+var monIfcOpt bool
+var flushSteerOpt bool
+var steerFromOpt string
+var steerToOpt string
+var steerProtoOpt string
+var steerNextHopOpt string
+var aclRuleId int
 
+func main() {
+
+	flag.BoolVar(&monFlowsOpt, "flows", false, "monitor flows")
+	flag.BoolVar(&monIfcOpt, "interfaces", false, "monitor interfaces")
+	flag.BoolVar(&flushSteerOpt, "flush-steer", false, "flush old steering rules")
+	flag.StringVar(&steerFromOpt, "from", "", "steer flow source ip:port")
+	flag.StringVar(&steerToOpt, "to", "", "steer flow destination ip:port")
+	flag.StringVar(&steerProtoOpt, "proto", "tcp", "steer flow protocol")
+	flag.StringVar(&steerNextHopOpt, "next-hop", "", "steer to next-hop")
+	flag.IntVar(&aclRuleId, "id", 10, "steer rule id")
+	flag.Parse()
+
+	h := hal.NewDnHal(flushSteerOpt)
+
+	if steerFromOpt != "" {
+
+		if steerToOpt == "" {
+			panic("missing flow destination")
+		}
+		if steerNextHopOpt == "" {
+			panic("missint next hop")
+		}
+
+		var err error
+		var port uint64
+
+		fk := &hal.FlowKey{}
+
+		tokens := strings.Split(steerFromOpt, ":")
+		if len(tokens) != 2 {
+			panic("failed to parse flow source")
+		}
+		fk.SrcAddr = net.ParseIP(tokens[0])
+		if port, err = strconv.ParseUint(tokens[1], 10, 16); err != nil {
+			panic("failed to parse flow source port")
+		}
+		fk.SrcPort = uint16(port)
+
+		tokens = strings.Split(steerToOpt, ":")
+		if len(tokens) != 2 {
+			panic("failed to parse flow source")
+		}
+		fk.DstAddr = net.ParseIP(tokens[0])
+		if port, err = strconv.ParseUint(tokens[1], 10, 16); err != nil {
+			panic("failed to parse flow source port")
+		}
+		fk.DstPort = uint16(port)
+
+		switch steerProtoOpt {
+		case "tcp":
+			fk.Protocol = hal.TCP
+		case "udp":
+			fk.Protocol = hal.UDP
+		default:
+			panic("unexpected flow protocol")
+		}
+
+		fmt.Println("steer", fk, "to", steerNextHopOpt, "rule-id", aclRuleId)
+
+		hal.SetAclRuleIndex(aclRuleId)
+		err = h.Steer(fk, steerNextHopOpt)
+		if err != nil {
+			panic(err)
+		}
+		panic("DONE")
+	}
 
 	for {
 		fmt.Println()
@@ -58,17 +133,5 @@ func main() {
 			fmt.Println("(none)")
 		}
 		time.Sleep(10 * time.Second)
-
-		//fk := hal.FlowKey{
-		//	Protocol: 0,
-		//	SrcAddr:  []byte("10.0.0.1/32"),
-		//	DstAddr:  []byte("200.200.200.1/32"),
-		//	SrcPort:  0,
-		//	DstPort:  0,
-		//}
-		//err := h.Steer(&fk, "halo1")
-		//if err != nil {
-		//	panic(err)
-		//}
 	}
 }
