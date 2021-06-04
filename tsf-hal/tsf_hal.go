@@ -67,6 +67,7 @@ type DnHalImpl struct {
 	initialized bool
 	grpcAddr    string
 	interfaces  struct {
+		names          []string
 		twampAddr      map[string]string
 		twampPort      map[string]int
 		lower2upper    map[string]string
@@ -139,12 +140,13 @@ const HALO_INTERFACES_COUNT = 2
 const ACL_NAME = "Steering"
 
 func (hal *DnHalImpl) InitInterfaces() {
+	var haloIf string
 	var dnIf string
 	var twamp string
 	var twampPort string
-	var haloIf string
 	var ok bool
 
+	hal.interfaces.names = make([]string, HALO_INTERFACES_COUNT)
 	hal.interfaces.twampAddr = make(map[string]string)
 	hal.interfaces.twampPort = make(map[string]int)
 	hal.interfaces.lower2upper = make(map[string]string)
@@ -164,6 +166,10 @@ func (hal *DnHalImpl) InitInterfaces() {
 
 	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
 		haloIf = fmt.Sprintf("halo%d", idx)
+		hal.interfaces.names[idx] = haloIf
+	}
+
+	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
 		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
 			dnIf = fmt.Sprintf("ge100-0/0/%d", idx)
 		}
@@ -181,6 +187,8 @@ func (hal *DnHalImpl) InitInterfaces() {
 			twampPort = "10001"
 			log.Error("Failed to get TWAMP server UDP ports for: ", dnIf)
 		}
+
+		haloIf = hal.interfaces.names[idx]
 		hal.interfaces.twampAddr[haloIf] = twamp
 		hal.interfaces.twampPort[haloIf], _ = strconv.Atoi(twampPort)
 		hal.interfaces.lower2upper[dnIf] = haloIf
@@ -392,8 +400,8 @@ func monitorFlows() {
 }
 
 func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
-	for ifc, tl := range hal.interfaces.stats {
-		err := v(ifc, tl)
+	for _, ifc := range hal.interfaces.names {
+		err := v(ifc, hal.interfaces.stats[ifc])
 		if err != nil {
 			return err
 		}
