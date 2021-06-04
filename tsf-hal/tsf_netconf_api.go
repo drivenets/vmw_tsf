@@ -112,8 +112,8 @@ var AccessListConfig = `
                                 <config-items>
                                     <ipv4-matches>
                                         <ipv4-acl-match>
-                                            <destination-ipv4>%[3]s/32</destination-ipv4>
-                                            <source-ipv4>%[5]s/32</source-ipv4>
+                                            <source-ipv4>%[3]s/32</source-ipv4>
+                                            <destination-ipv4>%[5]s/32</destination-ipv4>
                                         </ipv4-acl-match>
                                     </ipv4-matches>
                                     <matches>
