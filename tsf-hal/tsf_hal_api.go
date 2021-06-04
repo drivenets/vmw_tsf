@@ -38,7 +38,7 @@ type LinkTelemetry struct {
 type InterfaceTelemetry struct {
 	Speed   uint64
 	RxBytes uint64 `json:"rx-octets"`
-	RxBps   uint64 `json:"rx-bits-per-secon"`
+	RxBps   uint64 `json:"rx-bits-per-second"`
 	TxBytes uint64 `json:"tx-octets"`
 	TxBps   uint64 `json:"tx-bits-per-second"`
 	// An interface is mapped 1:1 to a tunnel between two HALO
