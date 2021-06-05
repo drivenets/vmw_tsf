@@ -308,7 +308,7 @@ func setupTwampTetst(twampTests map[string]*twamp.TwampTest) {
 	var ok bool
 	var skipTwamp string
 	if skipTwamp, ok = os.LookupEnv("SKIP_TWAMP"); !ok {
-		skipTwamp = "1"
+		skipTwamp = "0"
 	}
 
 	if skipTwamp == "1" {
