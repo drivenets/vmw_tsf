@@ -135,7 +135,7 @@ func (hal *DnHalImpl) Init(cleanAcl bool) {
 	hal.initialized = true
 }
 
-const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 5
+const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 15
 const HALO_INTERFACES_COUNT = 2
 const ACL_NAME = "Steering"
 
