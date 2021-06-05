@@ -68,6 +68,14 @@ func (*DnHalMockImpl) GetInterfaces(v InterfaceVisitor) error {
 	return nil
 }
 
+func (*DnHalMockImpl) GetLanInterfaces(v InterfaceVisitor) error {
+	panic("NOT IMPLEMENTED")
+}
+
+func (*DnHalMockImpl) GetWanInterfaces(v InterfaceVisitor) error {
+	panic("NOT IMPLEMENTED")
+}
+
 var ftl = map[*FlowKey]FlowTelemetry{
 	{
 		Protocol: TCP,

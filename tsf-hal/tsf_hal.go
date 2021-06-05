@@ -440,6 +440,14 @@ func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
 	return nil
 }
 
+func (hal *DnHalImpl) GetLanInterfaces(v InterfaceVisitor) error {
+	panic("NOT IMPLEMENTED")
+}
+
+func (hal *DnHalImpl) GetWanInterfaces(v InterfaceVisitor) error {
+	panic("NOT IMPLEMENTED")
+}
+
 func (fk *FlowKey) AsKey() string {
 	return fmt.Sprintf(
 		"%d:%s:%s:%d:%d", fk.Protocol,

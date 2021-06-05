@@ -44,6 +44,7 @@ type InterfaceTelemetry struct {
 	// An interface is mapped 1:1 to a tunnel between two HALO
 	// neighbors. The delay and jitter in this case refers to the
 	// link represented by this interface.
+	// (For LAN interfaces Delan and Jitter have no meaning)
 	Link LinkTelemetry
 }
 
@@ -72,6 +73,8 @@ type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 // DnHal interface
 type DnHal interface {
 	Steer(*FlowKey, string) error
-	GetInterfaces(InterfaceVisitor) error
+	GetInterfaces(InterfaceVisitor) error    // WILL BE DEPRECATED (returns both LAN and WAN)
+	GetLanInterfaces(InterfaceVisitor) error // NOT IMPLEMENTED
+	GetWanInterfaces(InterfaceVisitor) error // NOT IMPLEMENTED
 	GetFlows(FlowVisitor) error
 }
