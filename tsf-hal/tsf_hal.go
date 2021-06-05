@@ -514,7 +514,6 @@ func SetAclRuleIndex(idx int) {
 func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	session := NetConfConnector()
 
-	internalIface := hal.interfaces.upper2lower[nh]
 	log.Printf("Adding acl: %s:%d -> %s:%d nh: %s",
 		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh)
 	createAcl := fmt.Sprintf(AccessListConfig,
@@ -527,13 +526,6 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		hal.interfaces.nextHop[nh])
 	//log.Printf("NetConf: %s", createAcl)
 	_, err := session.Exec(netconf.RawMethod(createAcl))
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Attaching rule %d to interface %s", accessListInitId, internalIface)
-	attachAclToIface := fmt.Sprintf(InterfaceConfig, internalIface)
-	_, err = session.Exec(netconf.RawMethod(attachAclToIface))
 	if err != nil {
 		return err
 	}
@@ -594,6 +586,12 @@ func SteeringAclCleanup() error {
 			return err
 		}
 	}
+
+	_, err = session.Exec(netconf.RawMethod(CreateDefaultAclRule))
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -140,22 +140,31 @@ var AccessListConfig = `
 </edit-config>
 `
 
-var InterfaceConfig = `
+var CreateDefaultAclRule = `
 <edit-config>
     <target>
         <candidate />
     </target>
     <config>
-        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top" xmlns:dn-if="http://drivenets.com/ns/yang/dn-interfaces">
-           <dn-if:interfaces>
-               <dn-if:interface>
-                    <dn-if:name>%s</dn-if:name>
-                    <config-items>
-                        <description>halo again</description>
-                    </config-items>
-                    <acl-attached><interface-ipv4-access-lists><interface-ipv4-access-list><global-acl>false</global-acl><config-items><global-acl>false</global-acl><direction>in</direction><name>Steering</name></config-items><direction>in</direction></interface-ipv4-access-list></interface-ipv4-access-lists></acl-attached>
-               </dn-if:interface>
-           </dn-if:interfaces>
+        <drivenets-top xmlns:dn-access-control-list="http://drivenets.com/ns/yang/dn-access-control-list">
+            <dn-access-control-list:access-lists>
+                <ipv4>
+                    <access-list>
+                        <rules>
+                            <rule>
+                                <rule-id>65434</rule-id>
+                                <config-items>
+                                   <rule-type>allow</rule-type>
+                                </config-items>
+                            </rule>
+                        </rules>
+                        <config-items>
+                            <name>Steering</name>
+                        </config-items>
+                        <name>Steering</name>
+                    </access-list>
+                </ipv4>
+            </dn-access-control-list:access-lists>
         </drivenets-top>
     </config>
 </edit-config>
