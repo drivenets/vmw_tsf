@@ -304,54 +304,6 @@ func subscribeForInterfaceStats(client pb.GNMIClient, ctx context.Context) (pb.G
 	return sc, nil
 }
 
-func setupTwampTetst(twampTests map[string]*twamp.TwampTest) {
-	var ok bool
-	var skipTwamp string
-	if skipTwamp, ok = os.LookupEnv("SKIP_TWAMP"); !ok {
-		skipTwamp = "0"
-	}
-
-	if skipTwamp == "1" {
-		return
-	}
-
-	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
-		haloIf := fmt.Sprintf("halo%d", idx)
-		twampAddr := hal.interfaces.twampAddr[haloIf]
-		twampPort := hal.interfaces.twampPort[haloIf]
-
-		twampClient := twamp.NewClient()
-		twampConn, err := twampClient.Connect(twampAddr)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		defer twampConn.Close()
-
-		twampSession, err := twampConn.CreateSession(
-			twamp.TwampSessionConfig{
-				SenderPort:   twampPort,
-				ReceiverPort: twampPort + 1,
-				Timeout:      1,
-				Padding:      42,
-				TOS:          0,
-			},
-		)
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		defer twampSession.Stop()
-
-		twampTest, ok := twampSession.CreateTest()
-		if ok != nil {
-			log.Error(ok)
-			continue
-		}
-		twampTests[haloIf] = twampTest
-	}
-}
-
 func monitorInterfaces() {
 	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -370,7 +322,50 @@ func monitorInterfaces() {
 	}
 
 	twampTests := make(map[string]*twamp.TwampTest)
-	setupTwampTetst(twampTests)
+
+	var ok bool
+	var skipTwamp string
+	if skipTwamp, ok = os.LookupEnv("SKIP_TWAMP"); !ok {
+		skipTwamp = "0"
+	}
+
+	if skipTwamp != "1" {
+		for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
+			haloIf := fmt.Sprintf("halo%d", idx)
+			twampAddr := hal.interfaces.twampAddr[haloIf]
+			twampPort := hal.interfaces.twampPort[haloIf]
+
+			twampClient := twamp.NewClient()
+			twampConn, err := twampClient.Connect(twampAddr)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			defer twampConn.Close()
+
+			twampSession, err := twampConn.CreateSession(
+				twamp.TwampSessionConfig{
+					SenderPort:   twampPort,
+					ReceiverPort: twampPort + 1,
+					Timeout:      1,
+					Padding:      42,
+					TOS:          0,
+				},
+			)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			defer twampSession.Stop()
+
+			twampTest, ok := twampSession.CreateTest()
+			if ok != nil {
+				log.Error(ok)
+				continue
+			}
+			twampTests[haloIf] = twampTest
+		}
+	}
 
 	for {
 		response, err := sc.Recv()
