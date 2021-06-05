@@ -582,7 +582,14 @@ func SteeringAclCleanup() error {
 		}
 	}
 
+	log.Info("Create default ACL rule")
 	_, err = session.Exec(netconf.RawMethod(CreateDefaultAclRule))
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+	log.Printf("Committing changes")
+	_, err = session.Exec(netconf.RawMethod(Commit))
 	if err != nil {
 		return err
 	}
