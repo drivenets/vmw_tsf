@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	//stdLog "log"
 	"net"
 	"strings"
 
@@ -81,6 +82,7 @@ type DnHalImpl struct {
 		state     *gfu.StateNetFlow
 		aggregate map[string]*FlowAggregate
 	}
+	aclRules map[int]string
 }
 
 var hal = &DnHalImpl{}
@@ -112,12 +114,11 @@ func (hal *DnHalImpl) Init(cleanAcl bool) {
 	defer hal.mutex.Unlock()
 
 	var ok bool
-
 	if hal.grpcAddr, ok = os.LookupEnv("GRPC_ADDR"); !ok {
 		hal.grpcAddr = DRIVENETS_GRPC_ADDR
 	}
 	hal.grpcAddr = hal.grpcAddr + ":50051"
-
+	hal.aclRules = make(map[int]string)
 	hal.InitInterfaces()
 
 	if cleanAcl == true {
@@ -508,7 +509,7 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 
 	log.Printf("Adding acl: %s:%d -> %s:%d nh: %s",
 		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh)
-	createAcl := fmt.Sprintf(AccessListConfig,
+	createAcl := fmt.Sprintf(CreateParameterizedAclRule,
 		accessListInitId,
 		fk.Protocol,
 		fk.SrcAddr,
@@ -525,10 +526,47 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	log.Printf("Committing changes")
 	_, err = session.Exec(netconf.RawMethod(Commit))
 	if err != nil {
+		if strings.Contains(err.Error(), "Commit failed: empty commit") {
+			log.Println(err.Error())
+		} else {
+			return err
+		}
+	}
+
+	hal.aclRules[accessListInitId] = fmt.Sprintf("%d:%s:%s:%d:%d:%s",
+		fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort, hal.interfaces.nextHop[nh])
+
+	accessListInitId += 10
+	return nil
+}
+
+func (hal *DnHalImpl) RemoveSteer(fk *FlowKey, nh string) error {
+	ruleId := -1
+	for k, v := range hal.aclRules {
+		if v == fmt.Sprintf("%d:%s:%s:%d:%d:%s",
+			fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort, hal.interfaces.nextHop[nh]) {
+			ruleId = k
+		}
+	}
+	if ruleId == -1 {
+		return fmt.Errorf("NO SUCH ACL RULE: %v", fk)
+	}
+
+	session := NetConfConnector()
+	log.Printf("Removing acl: %s:%d -> %s:%d, nh: %s, rule-id: %d",
+		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh, ruleId)
+	_, err := session.Exec(netconf.RawMethod(fmt.Sprintf(DeleteAclRuleByID, ruleId)))
+	if err != nil {
 		return err
 	}
 
-	accessListInitId += 10
+	log.Printf("Committing changes")
+	_, err = session.Exec(netconf.RawMethod(Commit))
+	if err != nil {
+		return err
+	}
+
+	delete(hal.aclRules, ruleId)
 	return nil
 }
 
@@ -559,13 +597,11 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 //	return nil
 //}
 
-var session *netconf.Session
-
 func SteeringAclCleanup() error {
 	session := NetConfConnector()
 
 	log.Info("removing all rules under Steering bucket if any")
-	_, err := session.Exec(netconf.RawMethod(ClearACLBucket))
+	_, err := session.Exec(netconf.RawMethod(DeleteAllAclRules))
 	if err != nil {
 		return err
 	}
@@ -599,6 +635,9 @@ var netconfSession *netconf.Session
 func NetConfConnector() *netconf.Session {
 	var err error
 	var ok bool
+	//log := stdLog.New(os.Stderr, "netconf ", 1)
+	//netconf.SetLog(netconf.NewStdLog(log, netconf.LogDebug))
+
 	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
 		nc.netconfUser = "dnroot"
 	}

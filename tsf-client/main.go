@@ -72,9 +72,14 @@ func handleSteer(h hal.DnHal) {
 	}
 
 	fmt.Println("steer", fk, "to", steerNextHopOpt, "rule-id", aclRuleId)
-
 	hal.SetAclRuleIndex(aclRuleId)
 	err = h.Steer(fk, steerNextHopOpt)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("delete steer", fk, "to", steerNextHopOpt, "rule-id")
+	err = h.RemoveSteer(fk, steerNextHopOpt)
 	if err != nil {
 		panic(err)
 	}
