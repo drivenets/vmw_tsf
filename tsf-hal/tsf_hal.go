@@ -432,12 +432,38 @@ func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
 	return nil
 }
 
+func isHaloLanInterface(name string) bool {
+	return strings.HasPrefix(name, "halo_local")
+}
+
+func isHaloWanInterface(name string) bool {
+	return strings.HasPrefix(name, "halo") && !isHaloLanInterface(name)
+}
+
 func (hal *DnHalImpl) GetLanInterfaces(v InterfaceVisitor) error {
-	panic("NOT IMPLEMENTED")
+	for _, ifc := range hal.interfaces.names {
+		if !isHaloLanInterface(ifc) {
+			continue
+		}
+		err := v(ifc, hal.interfaces.stats[ifc])
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (hal *DnHalImpl) GetWanInterfaces(v InterfaceVisitor) error {
-	panic("NOT IMPLEMENTED")
+	for _, ifc := range hal.interfaces.names {
+		if !isHaloWanInterface(ifc) {
+			continue
+		}
+		err := v(ifc, hal.interfaces.stats[ifc])
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (fk *FlowKey) AsKey() string {
