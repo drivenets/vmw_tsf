@@ -74,8 +74,8 @@ type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 type DnHal interface {
 	Steer(*FlowKey, string) error
 	RemoveSteer(*FlowKey, string) error
-	GetInterfaces(InterfaceVisitor) error    // WILL BE DEPRECATED (returns both LAN and WAN)
-	GetLanInterfaces(InterfaceVisitor) error // NOT IMPLEMENTED
-	GetWanInterfaces(InterfaceVisitor) error // NOT IMPLEMENTED
+	GetInterfaces(InterfaceVisitor) error // WILL BE DEPRECATED (returns both LAN and WAN)
+	GetLanInterfaces(InterfaceVisitor) error
+	GetWanInterfaces(InterfaceVisitor) error
 	GetFlows(FlowVisitor) error
 }
