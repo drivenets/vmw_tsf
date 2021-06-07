@@ -1,102 +1,92 @@
 //package tsf_netconf
 package hal
 
-//var GetAccessListByName = `
-//<get-config>
-//    <source>
-//        <running />
-//    </source>
-//    <filter>
-//        <drivenets-top xmlns:dn-access-control-list="http://drivenets.com/ns/yang/dn-access-control-list">
-//            <dn-access-control-list:access-lists>
-//                <ipv4>
-//                    <access-list>
-//                        <name>%s</name>
-//                    </access-list>
-//                </ipv4>
-//            </dn-access-control-list:access-lists>
-//        </drivenets-top>
-//    </filter>
-//</get-config>
-//`
-//
-//var GetInterfaceByName = `
-//<get-config>
-//    <source>
-//        <running />
-//    </source>
-//    <filter>
-//        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top" xmlns:dn-if="http://drivenets.com/ns/yang/dn-interfaces">
-//            <dn-if:interfaces>
-//                <dn-if:interface dn-if:name="%s" />
-//            </dn-if:interfaces>
-//        </drivenets-top>
-//    </filter>
-//</get-config>
-//`
-
-var ClearACLBucket = `
-  <edit-config>
-    <target>
-      <candidate/>
-    </target>
-    <config>
-      <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
-        <access-lists xmlns="http://drivenets.com/ns/yang/dn-access-control-list">
-          <ipv4>
-            <access-list>
-              <name>Steering</name>
-				<rules xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
-				</rules>
-            </access-list>
-          </ipv4>
-        </access-lists>
-      </drivenets-top>
-    </config>
-  </edit-config>
-`
-
-var XMLAclDelete = `
-  <edit-config>
-    <target>
-      <candidate/>
-    </target>
-    <config>
-      <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
-        <access-lists xmlns="http://drivenets.com/ns/yang/dn-access-control-list">
-          <ipv4>
-            <access-list xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
-              <name>%s</name>
-            </access-list>
-          </ipv4>
-        </access-lists>
-      </drivenets-top>
-    </config>
-  </edit-config>
-`
-
-var XMLAclDetach = `
+var DeleteAclRuleByID = `
 <edit-config>
     <target>
-        <candidate />
+      <candidate/>
     </target>
     <config>
-        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top" xmlns:dn-if="http://drivenets.com/ns/yang/dn-interfaces">
-           <dn-if:interfaces>
-               <dn-if:interface>
-                    <dn-if:name>%s</dn-if:name>
-                    <acl-attached>
-                        <interface-ipv4-access-lists xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
-                        </interface-ipv4-access-lists>
-                    </acl-attached>
-               </dn-if:interface>
-           </dn-if:interfaces>
+        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+            <access-lists xmlns="http://drivenets.com/ns/yang/dn-access-control-list">
+                <ipv4>
+                    <access-list>
+                        <name>Steering</name>
+                        <rules>
+                            <rule xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
+                                <rule-id>%d</rule-id>
+                            </rule>
+                        </rules>
+                    </access-list>
+                </ipv4>
+            </access-lists>
         </drivenets-top>
     </config>
 </edit-config>
 `
 
-var AccessListConfig = `
+var DeleteAllAclRules = `
+<edit-config>
+    <target>
+        <candidate/>
+    </target>
+    <config>
+        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+            <access-lists xmlns="http://drivenets.com/ns/yang/dn-access-control-list">
+                <ipv4>
+                    <access-list>
+                        <name>Steering</name>
+                        <rules xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
+                        </rules>
+                    </access-list>
+                </ipv4>
+            </access-lists>
+        </drivenets-top>
+    </config>
+</edit-config>
+`
+
+//var XMLAclDelete = `
+//<edit-config>
+//    <target>
+//        <candidate/>
+//    </target>
+//    <config>
+//        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+//            <access-lists xmlns="http://drivenets.com/ns/yang/dn-access-control-list">
+//                <ipv4>
+//                    <access-list xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
+//                        <name>%s</name>
+//                    </access-list>
+//                </ipv4>
+//            </access-lists>
+//        </drivenets-top>
+//    </config>
+//</edit-config>
+//`
+
+//var XMLAclDetach = `
+//<edit-config>
+//    <target>
+//        <candidate />
+//    </target>
+//    <config>
+//        <drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top" xmlns:dn-if="http://drivenets.com/ns/yang/dn-interfaces">
+//           <dn-if:interfaces>
+//               <dn-if:interface>
+//                    <dn-if:name>%s</dn-if:name>
+//                    <acl-attached>
+//                        <interface-ipv4-access-lists xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
+//                        </interface-ipv4-access-lists>
+//                    </acl-attached>
+//               </dn-if:interface>
+//           </dn-if:interfaces>
+//        </drivenets-top>
+//    </config>
+//</edit-config>
+//`
+
+var CreateParameterizedAclRule = `
 <edit-config>
     <target>
         <candidate />
@@ -226,7 +216,7 @@ var accessListInitId = 10
 //	defer session.Close()
 //
 //	log.Println(session.SessionID)
-//	createAcl := fmt.Sprintf(AccessListConfig,
+//	createAcl := fmt.Sprintf(CreateParameterizedAclRule,
 //		accessListInitId,
 //		string(fk.SrcAddr),
 //		string(fk.DstAddr),
