@@ -235,7 +235,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 const DRIVENETS_IFINDEX_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/if-index"
 
 func getDnIfIndex(client pb.GNMIClient, ifc string) (uint32, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
 	var pathList []*pb.Path
