@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -127,21 +128,25 @@ func monitorFlows(h hal.DnHal) {
 	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
 	fmt.Fprintln(w, "Source\tDestination\tProto\tIngress\tEgress\tPkt/sec\tPkt/total\tBytes/sec\tBytes/total")
 	fmt.Fprintln(w, "------\t-----------\t-----\t-------\t------\t-------\t---------\t---------\t-----------")
-	count := 0
+	flows := make([]string, 0, 1024)
 	h.GetFlows(
 		func(key *hal.FlowKey, stat *hal.FlowTelemetry) error {
-			count += 1
-			fmt.Fprintf(w, "%s:%d\t%s:%d\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n",
-				key.SrcAddr, key.SrcPort,
-				key.DstAddr, key.DstPort,
-				key.Protocol,
-				stat.IngressIf, stat.EgressIf,
-				stat.RxRatePps, stat.RxTotalPkts,
-				stat.RxRateBps, stat.RxTotalBytes)
+			flows = append(flows,
+				fmt.Sprintf("%s:%d\t%s:%d\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n",
+					key.SrcAddr, key.SrcPort,
+					key.DstAddr, key.DstPort,
+					key.Protocol,
+					stat.IngressIf, stat.EgressIf,
+					stat.RxRatePps, stat.RxTotalPkts,
+					stat.RxRateBps, stat.RxTotalBytes))
 			return nil
 		})
+	sort.Strings(flows)
+	for _, fl := range flows {
+		fmt.Fprint(w, fl)
+	}
 	w.Flush()
-	if count == 0 {
+	if len(flows) == 0 {
 		fmt.Println("(none)")
 	}
 }
