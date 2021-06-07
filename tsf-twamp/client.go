@@ -29,9 +29,12 @@ func NewClient() *TwampClient {
 	return &TwampClient{}
 }
 
+const TWAMP_DIALER_TIMEOUT = 10
+
 func (c *TwampClient) Connect(hostname string) (*TwampConnection, error) {
 	// connect to remote host
-	conn, err := net.Dial("tcp", hostname)
+	d := net.Dialer{Timeout: TWAMP_DIALER_TIMEOUT}
+	conn, err := d.Dial("tcp", hostname)
 	if err != nil {
 		return nil, err
 	}
