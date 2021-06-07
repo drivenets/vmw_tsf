@@ -6,9 +6,11 @@ import (
 	"fmt"
 	//stdLog "log"
 	"net"
+	"sort"
 	"strings"
 
 	"github.com/Juniper/go-netconf/netconf"
+	"github.com/openconfig/gnmi/proto/gnmi"
 	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
 	"golang.org/x/crypto/ssh"
@@ -63,20 +65,37 @@ func (agg *FlowAggregate) ToTelemetry() *FlowTelemetry {
 	}
 }
 
+const NETFLOW_ID_INVALID = 0xFFFFFFFF
+
+type Interface struct {
+	Upper     string
+	Lower     string
+	NetFlowId uint32
+	NextHop   net.IP
+	Stats     InterfaceTelemetry
+	Twamp     struct {
+		Peer string
+		Port uint16
+	}
+}
+
 type DnHalImpl struct {
 	mutex       sync.Mutex
 	initialized bool
 	grpcAddr    string
 	interfaces  struct {
-		names          []string
-		twampAddr      map[string]string
-		twampPort      map[string]int
-		lower2upper    map[string]string
-		upper2lower    map[string]string
-		netflow2upper  map[uint32]string
-		stats          map[string]*InterfaceTelemetry
-		sampleInterval int
-		nextHop        map[string]net.IP
+		UpdateInterval uint64
+		Map            struct {
+			Lock        sync.RWMutex
+			UpperSorted struct {
+				Lan []string
+				Wan []string
+			}
+			Upper2Interface   map[string]*Interface
+			Lower2Interface   map[string]*Interface
+			NetFlow2Interface map[uint32]*Interface
+			NextHop2Interface map[string]*Interface
+		}
 	}
 	flows struct {
 		state     *gfu.StateNetFlow
@@ -140,48 +159,146 @@ const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 5
 const HALO_INTERFACES_COUNT = 2
 const ACL_NAME = "Steering"
 
+type OptionInterface func(*Interface) error
+
+func OptionInterfaceUpper(name string) OptionInterface {
+	return func(ifc *Interface) error {
+		ifc.Upper = name
+		return nil
+	}
+}
+
+func OptionInterfaceLower(name string) OptionInterface {
+	return func(ifc *Interface) error {
+		ifc.Lower = name
+		return nil
+	}
+}
+
+func OptionInterfaceNetFlowId(nfid uint32) OptionInterface {
+	return func(ifc *Interface) error {
+		ifc.NetFlowId = nfid
+		return nil
+	}
+}
+
+func OptionInterfaceUpdateNetFlowId(client pb.GNMIClient) OptionInterface {
+	return func(ifc *Interface) error {
+		var err error
+
+		if ifc.NetFlowId, err = getDnIfIndex(client, ifc.Lower); err != nil {
+			log.Errorf("Failed to get interface index for %s", ifc.Lower)
+			return err
+		}
+		return nil
+	}
+}
+
+func OptionInterfaceNextHop(nh string) OptionInterface {
+	return func(ifc *Interface) error {
+		ifc.NextHop = net.ParseIP(nh)
+		return nil
+	}
+}
+
+func OptionInterfaceTwamp(peer string, port string) func(*Interface) error {
+	return func(ifc *Interface) error {
+		var port64 uint64
+		port64, err := strconv.ParseUint(port, 10, 16)
+		if err != nil {
+			log.Error("Failed to parse TWAMP port %d", port)
+			return err
+		}
+		port16 := uint16(port64)
+
+		ifc.Twamp.Peer = peer
+		ifc.Twamp.Port = port16
+		return nil
+	}
+}
+
+func NewInterface(options ...OptionInterface) (*Interface, error) {
+	ifc := &Interface{
+		NextHop:   net.ParseIP("0.0.0.0"),
+		NetFlowId: NETFLOW_ID_INVALID,
+	}
+	for _, op := range options {
+		err := op(ifc)
+		if err != nil {
+			return nil, err
+		}
+	}
+	hal.interfaces.Map.Lock.Lock()
+	defer hal.interfaces.Map.Lock.Unlock()
+
+	hal.interfaces.Map.Lower2Interface[ifc.Lower] = ifc
+	hal.interfaces.Map.Upper2Interface[ifc.Upper] = ifc
+	if ifc.NetFlowId != NETFLOW_ID_INVALID {
+		hal.interfaces.Map.NetFlow2Interface[ifc.NetFlowId] = ifc
+	}
+	wan := true
+	if ip4 := ifc.NextHop.To4(); ip4 != nil {
+		if ifc.NextHop.Equal(net.IPv4zero) {
+			wan = false
+		}
+	} else if ifc.NextHop.Equal(net.IPv6zero) {
+		wan = false
+	}
+	if wan {
+		hal.interfaces.Map.NextHop2Interface[ifc.Upper] = ifc
+		hal.interfaces.Map.UpperSorted.Wan = append(
+			hal.interfaces.Map.UpperSorted.Wan, ifc.Upper)
+		sort.Strings(hal.interfaces.Map.UpperSorted.Wan)
+	} else {
+		hal.interfaces.Map.UpperSorted.Lan = append(
+			hal.interfaces.Map.UpperSorted.Lan, ifc.Upper)
+		sort.Strings(hal.interfaces.Map.UpperSorted.Lan)
+	}
+	return ifc, nil
+}
+
 func (hal *DnHalImpl) InitInterfaces() {
 	var haloIf string
 	var dnIf string
-	var twamp string
-	var twampPort string
+	var peer string
+	var port string
 	var ok bool
 
-	hal.interfaces.names = make([]string, HALO_INTERFACES_COUNT+1)
-	hal.interfaces.twampAddr = make(map[string]string)
-	hal.interfaces.twampPort = make(map[string]int)
-	hal.interfaces.lower2upper = make(map[string]string)
-	hal.interfaces.upper2lower = make(map[string]string)
-	hal.interfaces.stats = make(map[string]*InterfaceTelemetry)
-	hal.interfaces.netflow2upper = make(map[uint32]string)
-	hal.interfaces.nextHop = make(map[string]net.IP)
+	hal.interfaces.Map.UpperSorted.Lan = make([]string, 0)
+	hal.interfaces.Map.UpperSorted.Wan = make([]string, 0)
+	hal.interfaces.Map.Upper2Interface = make(map[string]*Interface)
+	hal.interfaces.Map.Lower2Interface = make(map[string]*Interface)
+	hal.interfaces.Map.NetFlow2Interface = make(map[uint32]*Interface)
+	hal.interfaces.Map.NextHop2Interface = make(map[string]*Interface)
+
+	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatal("failed to connect to gRPC server: %s. Reason: %w", hal.grpcAddr, err)
+	}
+	defer conn.Close()
+	client := pb.NewGNMIClient(conn)
 
 	if haloIf, ok = os.LookupEnv("HALO_LOCAL"); ok {
 		if dnIf, ok = os.LookupEnv("HALO_LOCAL_IFACE"); !ok {
-			log.Fatalf("Missing DN interface for HALO_LOCAL")
+			log.Fatal("Missing DN interface for HALO_LOCAL")
 		}
-		hal.interfaces.names[HALO_INTERFACES_COUNT] = haloIf
-		hal.interfaces.twampAddr[haloIf] = ""
-		hal.interfaces.twampPort[haloIf] = 0
-		hal.interfaces.lower2upper[dnIf] = haloIf
-		hal.interfaces.upper2lower[haloIf] = dnIf
-		hal.interfaces.stats[haloIf] = &InterfaceTelemetry{}
-		hal.interfaces.nextHop[haloIf] = net.ParseIP("0.0.0.0")
+		_, err := NewInterface(
+			OptionInterfaceUpper(haloIf),
+			OptionInterfaceLower(dnIf),
+			OptionInterfaceUpdateNetFlowId(client),
+		)
+		if err != nil {
+			log.Fatal("Failed to create local interface. Reason:", err)
+		}
 	}
-	log.Warn("STATS: ", hal.interfaces.stats)
 
 	var interval string
-	hal.interfaces.sampleInterval = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
+	hal.interfaces.UpdateInterval = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
 	if interval, ok = os.LookupEnv("IFC_SAMPLE"); ok {
 		var err error
-		if hal.interfaces.sampleInterval, err = strconv.Atoi(interval); err != nil {
+		if hal.interfaces.UpdateInterval, err = strconv.ParseUint(interval, 10, 64); err != nil {
 			log.Fatalf("Failed to parse interface sampling interval: %s", interval)
 		}
-	}
-
-	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
-		haloIf = fmt.Sprintf("halo%d", idx)
-		hal.interfaces.names[idx] = haloIf
 	}
 
 	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
@@ -194,53 +311,39 @@ func (hal *DnHalImpl) InitInterfaces() {
 			log.Fatalf("Can not find nexthop in HALO%d_IFACE", idx)
 		}
 
-		if twamp, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP", idx)); !ok {
-			twamp = "0.0.0.0:862"
+		if peer, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP", idx)); !ok {
+			peer = "0.0.0.0:862"
 			log.Error("Failed to get TWAMP server for: ", dnIf)
 		}
-		if twampPort, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP_PORT", idx)); !ok {
-			twampPort = "10001"
+		if port, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP_PORT", idx)); !ok {
+			port = "10001"
 			log.Error("Failed to get TWAMP server UDP ports for: ", dnIf)
 		}
 
-		haloIf = hal.interfaces.names[idx]
-		hal.interfaces.twampAddr[haloIf] = twamp
-		hal.interfaces.twampPort[haloIf], _ = strconv.Atoi(twampPort)
-		hal.interfaces.lower2upper[dnIf] = haloIf
-		hal.interfaces.upper2lower[haloIf] = dnIf
-		hal.interfaces.stats[haloIf] = &InterfaceTelemetry{}
-		hal.interfaces.nextHop[haloIf] = net.ParseIP(nextHop1)
-	}
-
-	for haloIf, dnIf = range hal.interfaces.upper2lower {
-		var ifIdx uint32
-		var err error
-
-		conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
+		haloIf = fmt.Sprintf("halo%d", idx)
+		_, err := NewInterface(
+			OptionInterfaceUpper(haloIf),
+			OptionInterfaceLower(dnIf),
+			OptionInterfaceTwamp(peer, port),
+			OptionInterfaceNextHop(nextHop1),
+			OptionInterfaceUpdateNetFlowId(client),
+		)
 		if err != nil {
-			log.Fatal("failed to connect to gRPC server: %s. Reason: %w", hal.grpcAddr, err)
+			log.Fatal("Failed to create interface. Reason:", err)
 		}
-		defer conn.Close()
-
-		client := pb.NewGNMIClient(conn)
-
-		if ifIdx, err = getDnIfIndex(client, dnIf); err != nil {
-			log.Fatalf("Failed to get interface index for %s. Reason: %v", dnIf, err)
-		}
-		hal.interfaces.netflow2upper[ifIdx] = haloIf
-		log.Printf("Interface: upper=%s, lower=%s, net-flow-index=%d",
-			haloIf, dnIf, ifIdx)
 	}
 }
 
 const DRIVENETS_IFINDEX_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/if-index"
 
-func getDnIfIndex(client pb.GNMIClient, ifc string) (uint32, error) {
+func getDnIfIndex(client pb.GNMIClient, lower string) (uint32, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
+	var err error
+
 	var pathList []*pb.Path
-	idxPath := fmt.Sprintf(DRIVENETS_IFINDEX_PATH_TEMPLATE, ifc)
+	idxPath := fmt.Sprintf(DRIVENETS_IFINDEX_PATH_TEMPLATE, lower)
 	pbPath, err := ygot.StringToPath(idxPath, ygot.StructuredPath, ygot.StringSlicePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to convert %q to gNMI Path. Reason: %w", idxPath, err)
@@ -250,6 +353,9 @@ func getDnIfIndex(client pb.GNMIClient, ifc string) (uint32, error) {
 		Path:     pathList,
 		Encoding: pb.Encoding_JSON,
 	})
+	if err != nil {
+		return 0, fmt.Errorf("request failed for path %s", pathList)
+	}
 	notifs := resp.GetNotification()
 	if len(notifs) != 1 {
 		return 0, fmt.Errorf("unexpected notifications count: want 1, got %d, path=%s", len(notifs), idxPath)
@@ -269,33 +375,99 @@ func getDnIfIndex(client pb.GNMIClient, ifc string) (uint32, error) {
 const DRIVENETS_IFOPER_COUNTERS_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/counters/ethernet-counters"
 const DRIVENETS_IFOPER_SPEED_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/interface-speed"
 
+func interfaceOperPaths(lower string) (*gnmi.Path, *gnmi.Path) {
+	speed, _ := ygot.StringToPath(
+		fmt.Sprintf(DRIVENETS_IFOPER_SPEED_PATH_TEMPLATE, lower),
+		ygot.StructuredPath, ygot.StringSlicePath)
+	counters, _ := ygot.StringToPath(
+		fmt.Sprintf(DRIVENETS_IFOPER_COUNTERS_PATH_TEMPLATE, lower),
+		ygot.StructuredPath, ygot.StringSlicePath)
+	return speed, counters
+}
+
+func copyLanInterfaces() []*Interface {
+	hal.interfaces.Map.Lock.RLock()
+	defer hal.interfaces.Map.Lock.RUnlock()
+
+	wan := make([]*Interface, len(hal.interfaces.Map.UpperSorted.Lan))
+	for idx, ifc := range hal.interfaces.Map.UpperSorted.Lan {
+		wan[idx] = hal.interfaces.Map.Upper2Interface[ifc]
+	}
+	return wan
+}
+
+func copyWanInterfaces() []*Interface {
+	hal.interfaces.Map.Lock.RLock()
+	defer hal.interfaces.Map.Lock.RUnlock()
+
+	wan := make([]*Interface, len(hal.interfaces.Map.UpperSorted.Wan))
+	for idx, ifc := range hal.interfaces.Map.UpperSorted.Wan {
+		wan[idx] = hal.interfaces.Map.Upper2Interface[ifc]
+	}
+	return wan
+}
+
+func findInterfaceByLower(lower string) *Interface {
+	var ifc *Interface = nil
+	var ok bool
+
+	hal.interfaces.Map.Lock.RLock()
+	defer hal.interfaces.Map.Lock.RUnlock()
+
+	if ifc, ok = hal.interfaces.Map.Lower2Interface[lower]; ok {
+		return ifc
+	}
+	return nil
+}
+
+func findInterfaceByNetFlowId(nfid uint32) *Interface {
+	var ifc *Interface = nil
+	var ok bool
+
+	hal.interfaces.Map.Lock.RLock()
+	defer hal.interfaces.Map.Lock.RUnlock()
+
+	if ifc, ok = hal.interfaces.Map.NetFlow2Interface[nfid]; ok {
+		return ifc
+	}
+	return nil
+}
+
+func findInterfaceByNextHop(nh string) *Interface {
+	var ifc *Interface = nil
+	var ok bool
+
+	hal.interfaces.Map.Lock.RLock()
+	defer hal.interfaces.Map.Lock.RUnlock()
+
+	if ifc, ok = hal.interfaces.Map.NextHop2Interface[nh]; ok {
+		return ifc
+	}
+	return nil
+}
+
 func subscribeForInterfaceStats(client pb.GNMIClient) (pb.GNMI_SubscribeClient, error) {
 	sc, err := client.Subscribe(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("could not subscribe to gNMI. Reason: %w", err)
 	}
 
-	for _, dnIf := range hal.interfaces.upper2lower {
-		countersPath, _ := ygot.StringToPath(
-			fmt.Sprintf(DRIVENETS_IFOPER_COUNTERS_PATH_TEMPLATE, dnIf),
-			ygot.StructuredPath, ygot.StringSlicePath)
-		speedPath, _ := ygot.StringToPath(
-			fmt.Sprintf(DRIVENETS_IFOPER_SPEED_PATH_TEMPLATE, dnIf),
-			ygot.StructuredPath, ygot.StringSlicePath)
+	hal.interfaces.Map.Lock.RLock()
+	defer hal.interfaces.Map.Lock.RUnlock()
 
+	for _, ifc := range hal.interfaces.Map.Lower2Interface {
+		speed, counters := interfaceOperPaths(ifc.Lower)
+		sample := uint64(time.Duration(hal.interfaces.UpdateInterval) * time.Second)
 		sc.Send(&pb.SubscribeRequest{
 			Request: &pb.SubscribeRequest_Subscribe{
 				Subscribe: &pb.SubscriptionList{
-					Subscription: []*pb.Subscription{
-						{
-							Path:           speedPath,
-							SampleInterval: uint64(time.Duration(hal.interfaces.sampleInterval) * time.Second),
-						},
-						{
-							Path:           countersPath,
-							SampleInterval: uint64(time.Duration(hal.interfaces.sampleInterval) * time.Second),
-						},
-					},
+					Subscription: []*pb.Subscription{{
+						Path:           speed,
+						SampleInterval: sample,
+					}, {
+						Path:           counters,
+						SampleInterval: sample,
+					}},
 					Mode:     pb.SubscriptionList_STREAM,
 					Encoding: pb.Encoding_JSON,
 				},
@@ -328,13 +500,10 @@ func monitorInterfaces() {
 	}
 
 	if skipTwamp != "1" {
-		for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
-			haloIf := fmt.Sprintf("halo%d", idx)
-			twampAddr := hal.interfaces.twampAddr[haloIf]
-			twampPort := hal.interfaces.twampPort[haloIf]
 
+		for _, ifc := range copyWanInterfaces() {
 			twampClient := twamp.NewClient()
-			twampConn, err := twampClient.Connect(twampAddr)
+			twampConn, err := twampClient.Connect(ifc.Twamp.Peer)
 			if err != nil {
 				log.Error(err)
 				continue
@@ -343,8 +512,8 @@ func monitorInterfaces() {
 
 			twampSession, err := twampConn.CreateSession(
 				twamp.TwampSessionConfig{
-					SenderPort:   twampPort,
-					ReceiverPort: twampPort + 1,
+					SenderPort:   int(ifc.Twamp.Port),
+					ReceiverPort: int(ifc.Twamp.Port) + 1,
 					Timeout:      1,
 					Padding:      42,
 					TOS:          0,
@@ -361,7 +530,7 @@ func monitorInterfaces() {
 				log.Error(ok)
 				continue
 			}
-			twampTests[haloIf] = twampTest
+			twampTests[ifc.Upper] = twampTest
 		}
 	}
 
@@ -377,11 +546,20 @@ func monitorInterfaces() {
 		}
 
 		for _, update := range response.GetUpdate().Update {
-			var haloIf string
+			var lower string
 			for _, pEl := range update.Path.GetElem() {
 				if pEl.Name == "interface" {
-					haloIf = hal.interfaces.lower2upper[pEl.Key["name"]]
+					lower = pEl.Key["name"]
+					break
 				}
+			}
+			if lower == "" {
+				continue
+			}
+
+			ifc := findInterfaceByLower(lower)
+			if ifc == nil {
+				log.Warnf("Skip unknow interface update: %s", lower)
 			}
 
 			lastPathElement := update.Path.GetElem()[len(update.Path.GetElem())-1].Name
@@ -390,11 +568,11 @@ func monitorInterfaces() {
 				if err != nil {
 					log.Panic(err)
 				}
-				hal.interfaces.stats[haloIf].Speed = uint64(s)
+				ifc.Stats.Speed = uint64(s)
 				//log.Printf("Updated interface speed: %s\n", s)
 			} else {
-				ifc := hal.interfaces.stats[haloIf]
-				err = json.Unmarshal(update.Val.GetJsonVal(), ifc)
+				stats := &ifc.Stats
+				err = json.Unmarshal(update.Val.GetJsonVal(), stats)
 				if err != nil {
 					log.Fatalf("Failed to unmarshal: %s. Reason: %v",
 						update.Val.GetJsonVal(), err)
@@ -402,11 +580,10 @@ func monitorInterfaces() {
 				//log.Printf("Updated interface counters: %v\n", *ifc)
 			}
 
-			if twampTest, ok := twampTests[haloIf]; ok {
-				ifc := hal.interfaces.stats[haloIf]
+			if twampTest, ok := twampTests[ifc.Upper]; ok {
 				results := twampTest.RunX(5)
-				ifc.Link.Delay = float64(results.Stat.Avg) / float64(time.Millisecond)
-				ifc.Link.Jitter = float64(results.Stat.Jitter) / float64(time.Millisecond)
+				ifc.Stats.Link.Delay = float64(results.Stat.Avg) / float64(time.Millisecond)
+				ifc.Stats.Link.Jitter = float64(results.Stat.Jitter) / float64(time.Millisecond)
 			}
 		}
 	}
@@ -421,32 +598,19 @@ func monitorFlows() {
 }
 
 func (hal *DnHalImpl) GetInterfaces(v InterfaceVisitor) error {
-	for _, ifc := range hal.interfaces.names {
-		if ifc == "" {
-			continue
-		}
-		err := v(ifc, hal.interfaces.stats[ifc])
-		if err != nil {
-			return err
-		}
+	var err error
+	if err = hal.GetLanInterfaces(v); err != nil {
+		return err
+	}
+	if err = hal.GetWanInterfaces(v); err != nil {
+		return err
 	}
 	return nil
 }
 
-func isHaloLanInterface(name string) bool {
-	return strings.HasPrefix(name, "halo_local")
-}
-
-func isHaloWanInterface(name string) bool {
-	return strings.HasPrefix(name, "halo") && !isHaloLanInterface(name)
-}
-
 func (hal *DnHalImpl) GetLanInterfaces(v InterfaceVisitor) error {
-	for _, ifc := range hal.interfaces.names {
-		if !isHaloLanInterface(ifc) {
-			continue
-		}
-		err := v(ifc, hal.interfaces.stats[ifc])
+	for _, ifc := range copyLanInterfaces() {
+		err := v(ifc.Upper, &ifc.Stats)
 		if err != nil {
 			return err
 		}
@@ -455,11 +619,8 @@ func (hal *DnHalImpl) GetLanInterfaces(v InterfaceVisitor) error {
 }
 
 func (hal *DnHalImpl) GetWanInterfaces(v InterfaceVisitor) error {
-	for _, ifc := range hal.interfaces.names {
-		if !isHaloWanInterface(ifc) {
-			continue
-		}
-		err := v(ifc, hal.interfaces.stats[ifc])
+	for _, ifc := range copyWanInterfaces() {
+		err := v(ifc.Upper, &ifc.Stats)
 		if err != nil {
 			return err
 		}
@@ -488,11 +649,15 @@ func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
 		var outIf string
 		var ok bool
 
-		if inIf, ok = hal.interfaces.netflow2upper[msg.InIf]; !ok {
+		if ifc := findInterfaceByNetFlowId(msg.InIf); ifc == nil {
 			inIf = "N/A"
+		} else {
+			inIf = ifc.Upper
 		}
-		if outIf, ok = hal.interfaces.netflow2upper[msg.OutIf]; !ok {
+		if ifc := findInterfaceByNetFlowId(msg.OutIf); ifc == nil {
 			outIf = "N/A"
+		} else {
+			outIf = ifc.Upper
 		}
 
 		// Update flows aggregate
@@ -535,6 +700,12 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 
 	log.Printf("Adding acl: %s:%d -> %s:%d nh: %s",
 		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh)
+	ifc := findInterfaceByNextHop(nh)
+	if ifc == nil {
+		err := fmt.Errorf("No interface with next-hop: %s", nh)
+		log.Warn(err)
+		return err
+	}
 	createAcl := fmt.Sprintf(CreateParameterizedAclRule,
 		accessListInitId,
 		fk.Protocol,
@@ -542,7 +713,7 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		fk.SrcPort,
 		fk.DstAddr,
 		fk.DstPort,
-		hal.interfaces.nextHop[nh])
+		ifc.Lower)
 	//log.Printf("NetConf: %s", createAcl)
 	_, err := session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
