@@ -268,8 +268,8 @@ func getDnIfIndex(client pb.GNMIClient, ifc string) (uint32, error) {
 const DRIVENETS_IFOPER_COUNTERS_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/counters/ethernet-counters"
 const DRIVENETS_IFOPER_SPEED_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/interface-speed"
 
-func subscribeForInterfaceStats(client pb.GNMIClient, ctx context.Context) (pb.GNMI_SubscribeClient, error) {
-	sc, err := client.Subscribe(ctx)
+func subscribeForInterfaceStats(client pb.GNMIClient) (pb.GNMI_SubscribeClient, error) {
+	sc, err := client.Subscribe(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("could not subscribe to gNMI. Reason: %w", err)
 	}
@@ -311,11 +311,8 @@ func monitorInterfaces() {
 	}
 	defer conn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(30*time.Minute))
-	defer cancel()
-
 	client := pb.NewGNMIClient(conn)
-	sc, err := subscribeForInterfaceStats(client, ctx)
+	sc, err := subscribeForInterfaceStats(client)
 
 	if err != nil {
 		log.Fatalf("Failed to subscribe: %v", err)
