@@ -78,11 +78,11 @@ func handleSteer(h hal.DnHal) {
 		panic(err)
 	}
 
-	fmt.Println("delete steer", fk, "to", steerNextHopOpt, "rule-id")
-	err = h.RemoveSteer(fk, steerNextHopOpt)
-	if err != nil {
-		panic(err)
-	}
+	//fmt.Println("delete steer", fk, "to", steerNextHopOpt, "rule-id")
+	//err = h.RemoveSteer(fk, steerNextHopOpt)
+	//if err != nil {
+	//	panic(err)
+	//}
 }
 
 func clearScreen() {
