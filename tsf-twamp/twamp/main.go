@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/drivenets/vmw_tsf/tsf-twamp"
 	"log"
 	"os"
+
+	twamp "github.com/drivenets/vmw_tsf/tsf-twamp"
 )
 
 func main() {
