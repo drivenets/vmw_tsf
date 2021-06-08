@@ -139,7 +139,7 @@ func (hal *DnHalImpl) Init(cleanAcl bool) {
 	hal.aclRules = make(map[int]string)
 	hal.InitInterfaces()
 
-	if cleanAcl == true {
+	if cleanAcl {
 		err := SteeringAclCleanup()
 		if err != nil {
 			log.Fatalf("failed to cleanup old access lists. Reason: %v", err)
@@ -494,6 +494,7 @@ func monitorInterfaces() {
 
 	var ok bool
 	var skipTwamp string
+	var twampConn *twamp.TwampConnection
 	if skipTwamp, ok = os.LookupEnv("SKIP_TWAMP"); !ok {
 		skipTwamp = "0"
 	}
@@ -502,9 +503,9 @@ func monitorInterfaces() {
 
 		for _, ifc := range copyWanInterfaces() {
 			twampClient := twamp.NewClient()
-			twampConn, err := twampClient.Connect(ifc.Twamp.Peer)
+			twampConn, err = twampClient.Connect(ifc.Twamp.Peer)
 			if err != nil {
-				log.Error(err)
+				log.Errorf("Failed to connect TWAMP %s. Reason: %s", ifc.Twamp.Peer, err)
 				continue
 			}
 			defer twampConn.Close()
@@ -701,7 +702,7 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh)
 	ifc := findInterfaceByNextHop(nh)
 	if ifc == nil {
-		err := fmt.Errorf("No interface with next-hop: %s", nh)
+		err := fmt.Errorf("no interface with next-hop: %s", nh)
 		log.Warn(err)
 		return err
 	}
