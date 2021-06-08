@@ -530,11 +530,11 @@ func SetAclRuleIndex(idx int) {
 	accessListInitId = idx
 }
 
-func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
+func AddAclRule(fk *FlowKey, nh string) error {
 	session := NetConfConnector()
 
-	log.Printf("Adding acl: %s:%d -> %s:%d nh: %s",
-		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh)
+	log.Printf("Adding acl: %s:%d -> %s:%d, nh: %s, rule-id: %d",
+		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh, accessListInitId)
 	createAcl := fmt.Sprintf(CreateParameterizedAclRule,
 		accessListInitId,
 		fk.Protocol,
@@ -543,14 +543,23 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		fk.DstAddr,
 		fk.DstPort,
 		hal.interfaces.nextHop[nh])
-	//log.Printf("NetConf: %s", createAcl)
+
 	_, err := session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Committing changes")
-	_, err = session.Exec(netconf.RawMethod(Commit))
+	hal.aclRules[accessListInitId] = fmt.Sprintf("%d:%s:%s:%d:%d:%s",
+		fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort, hal.interfaces.nextHop[nh])
+	accessListInitId += 10
+	return nil
+}
+
+func CommitChanges() error {
+	session := NetConfConnector()
+
+	log.Info("Committing changes")
+	_, err := session.Exec(netconf.RawMethod(Commit))
 	if err != nil {
 		if strings.Contains(err.Error(), "Commit failed: empty commit") {
 			log.Println(err.Error())
@@ -559,11 +568,30 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		}
 	}
 
-	hal.aclRules[accessListInitId] = fmt.Sprintf("%d:%s:%s:%d:%d:%s",
-		fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort, hal.interfaces.nextHop[nh])
-
-	accessListInitId += 10
 	return nil
+}
+
+func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
+	err := AddAclRule(fk, nh)
+	if err != nil {
+		return err
+	}
+	err = CommitChanges()
+	return err
+}
+
+func (hal *DnHalImpl) SteerBulk(rules []*SteerItem) error {
+	for _, rule := range rules {
+		fk := rule.Rule
+		nh := rule.NextHop
+		err := AddAclRule(fk, nh)
+		if err != nil {
+			return err
+		}
+	}
+
+	err := CommitChanges()
+	return err
 }
 
 func (hal *DnHalImpl) RemoveSteer(fk *FlowKey, nh string) error {

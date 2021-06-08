@@ -17,6 +17,10 @@ type FlowKey struct {
 	DstPort  uint16
 }
 
+type SteerItem struct {
+	Rule *FlowKey
+	NextHop string
+}
 // Note interface naming needs a translation layer between NCP ports
 // used by the SI and interfaces presented to the HALO container
 //type string string
@@ -44,7 +48,7 @@ type InterfaceTelemetry struct {
 	// An interface is mapped 1:1 to a tunnel between two HALO
 	// neighbors. The delay and jitter in this case refers to the
 	// link represented by this interface.
-	// (For LAN interfaces Delan and Jitter have no meaning)
+	// (For LAN interfaces Delay and Jitter have no meaning)
 	Link LinkTelemetry
 }
 
@@ -73,6 +77,7 @@ type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 // DnHal interface
 type DnHal interface {
 	Steer(*FlowKey, string) error
+	SteerBulk([]*SteerItem) error
 	RemoveSteer(*FlowKey, string) error
 	GetInterfaces(InterfaceVisitor) error // WILL BE DEPRECATED (returns both LAN and WAN)
 	GetLanInterfaces(InterfaceVisitor) error

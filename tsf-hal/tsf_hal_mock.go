@@ -33,6 +33,11 @@ func (*DnHalMockImpl) Steer(fk *FlowKey, nh string) error {
 	return nil
 }
 
+func (*DnHalMockImpl) SteerBulk(fk []*SteerItem) error {
+	fmt.Printf("steer flow: %s\n", fk)
+	return nil
+}
+
 func (*DnHalMockImpl) RemoveSteer(fk *FlowKey, nh string) error {
 	fmt.Printf("delete steer flow: %s to next hop: %s\n", fk, nh)
 	return nil
