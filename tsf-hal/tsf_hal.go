@@ -83,7 +83,7 @@ type DnHalImpl struct {
 	initialized bool
 	grpcAddr    string
 	interfaces  struct {
-		UpdateInterval uint64
+		UpdateInterval time.Duration
 		Map            struct {
 			Lock        sync.RWMutex
 			UpperSorted struct {
@@ -291,14 +291,15 @@ func (hal *DnHalImpl) InitInterfaces() {
 		}
 	}
 
-	var interval string
-	hal.interfaces.UpdateInterval = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
-	if interval, ok = os.LookupEnv("IFC_SAMPLE"); ok {
+	var sample string
+	var interval uint64 = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
+	if sample, ok = os.LookupEnv("IFC_SAMPLE"); ok {
 		var err error
-		if hal.interfaces.UpdateInterval, err = strconv.ParseUint(interval, 10, 64); err != nil {
+		if interval, err = strconv.ParseUint(sample, 10, 64); err != nil {
 			log.Fatalf("Failed to parse interface sampling interval: %s", interval)
 		}
 	}
+	hal.interfaces.UpdateInterval = time.Duration(interval) * time.Second
 
 	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
 		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
@@ -445,6 +446,16 @@ func findInterfaceByNextHop(nh string) *Interface {
 	return nil
 }
 
+func updateInterfaceDelayJitter(upper string, delay float64, jitter float64) {
+	hal.interfaces.Map.Lock.Lock()
+	defer hal.interfaces.Map.Lock.Unlock()
+
+	if ifc, ok := hal.interfaces.Map.Upper2Interface[upper]; ok {
+		ifc.Stats.Link.Delay = delay
+		ifc.Stats.Link.Jitter = jitter
+	}
+}
+
 func subscribeForInterfaceStats(client gnmi.GNMIClient) (gnmi.GNMI_SubscribeClient, error) {
 	sc, err := client.Subscribe(context.Background())
 	if err != nil {
@@ -456,16 +467,15 @@ func subscribeForInterfaceStats(client gnmi.GNMIClient) (gnmi.GNMI_SubscribeClie
 
 	for _, ifc := range hal.interfaces.Map.Lower2Interface {
 		speed, counters := interfaceOperPaths(ifc.Lower)
-		sample := uint64(time.Duration(hal.interfaces.UpdateInterval) * time.Second)
 		sc.Send(&gnmi.SubscribeRequest{
 			Request: &gnmi.SubscribeRequest_Subscribe{
 				Subscribe: &gnmi.SubscriptionList{
 					Subscription: []*gnmi.Subscription{{
 						Path:           speed,
-						SampleInterval: sample,
+						SampleInterval: uint64(hal.interfaces.UpdateInterval),
 					}, {
 						Path:           counters,
-						SampleInterval: sample,
+						SampleInterval: uint64(hal.interfaces.UpdateInterval),
 					}},
 					Mode:     gnmi.SubscriptionList_STREAM,
 					Encoding: gnmi.Encoding_JSON,
@@ -476,6 +486,8 @@ func subscribeForInterfaceStats(client gnmi.GNMIClient) (gnmi.GNMI_SubscribeClie
 	return sc, nil
 }
 
+const DRIVENETS_GNMI_UPDATE_LIMIT = 5
+
 func monitorInterfaces() {
 	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -483,11 +495,20 @@ func monitorInterfaces() {
 	}
 	defer conn.Close()
 
-	client := gnmi.NewGNMIClient(conn)
-	sc, err := subscribeForInterfaceStats(client)
-
+	interval := time.Duration(DRIVENETS_GNMI_UPDATE_LIMIT) * time.Second
+	if hal.interfaces.UpdateInterval < interval {
+		log.Warnf("gNMI can not update faster than %[1]d seconds. Update interface statistics every %[1]d seconds.",
+			DRIVENETS_GNMI_UPDATE_LIMIT)
+	} else {
+		interval = hal.interfaces.UpdateInterval
+	}
+	im, err := NewInterfaceMonitor(interval)
 	if err != nil {
-		log.Fatalf("Failed to subscribe: %v", err)
+		log.Fatalf("Failed to start. Reason: %s", err)
+	}
+
+	for lower := range hal.interfaces.Map.Lower2Interface {
+		im.Add(lower)
 	}
 
 	twampTests := make(map[string]*twamp.TwampTest)
@@ -534,63 +555,41 @@ func monitorInterfaces() {
 		}
 	}
 
+	djt := time.NewTicker(hal.interfaces.UpdateInterval)
 	for {
-		response, err := sc.Recv()
-		if err != nil {
-			log.Fatalf("Failed to get response: %v", err)
-		}
-
-		if response.GetUpdate() == nil {
-			log.Info("GNMI response seems to be empty: ", response)
-			continue
-		}
-
-		for _, update := range response.GetUpdate().Update {
-			var lower string
-			for _, pEl := range update.Path.GetElem() {
-				if pEl.Name == "interface" {
-					lower = pEl.Key["name"]
-					break
-				}
-			}
-			if lower == "" {
+		select {
+		case u := <-im.Speed():
+			if ifc := findInterfaceByLower(u.Name); ifc == nil {
+				log.Warn("No such interface %s. Skip speed update: %v", u.Name, u.Stats)
 				continue
-			}
-
-			ifc := findInterfaceByLower(lower)
-			if ifc == nil {
-				log.Warnf("Skip unknow interface update: %s", lower)
-			}
-
-			lastPathElement := update.Path.GetElem()[len(update.Path.GetElem())-1].Name
-			if lastPathElement == "interface-speed" {
-				s, err := strconv.Atoi(string(update.Val.GetJsonVal()))
-				if err != nil {
-					log.Panic(err)
-				}
-				ifc.Stats.Speed = uint64(s)
-				//log.Printf("Updated interface speed: %s\n", s)
 			} else {
-				stats := &ifc.Stats
-				err = json.Unmarshal(update.Val.GetJsonVal(), stats)
-				if err != nil {
-					log.Fatalf("Failed to unmarshal: %s. Reason: %v",
-						update.Val.GetJsonVal(), err)
-				}
-				//log.Printf("Updated interface counters: %v\n", *ifc)
+				ifc.Stats.Speed = u.Stats.Speed
 			}
-
-			if twampTest, ok := twampTests[ifc.Upper]; ok {
-				results := twampTest.RunX(5)
-				ifc.Stats.Link.Delay = float64(results.Stat.Avg) / float64(time.Millisecond)
-				ifc.Stats.Link.Jitter = float64(results.Stat.Jitter) / float64(time.Millisecond)
+		case u := <-im.Stats():
+			if ifc := findInterfaceByLower(u.Name); ifc == nil {
+				log.Warn("No such interface %s. Skip speed update: %v", u.Name, u.Stats)
+				continue
+			} else {
+				ifc.Stats.RxBytes = u.Stats.RxBytes
+				ifc.Stats.RxBps = u.Stats.RxBps
+				ifc.Stats.TxBytes = u.Stats.TxBytes
+				ifc.Stats.TxBps = u.Stats.TxBps
+			}
+		case <-djt.C:
+			if skipTwamp != "1" {
+				for upper, tt := range twampTests {
+					results := tt.RunX(5)
+					updateInterfaceDelayJitter(upper,
+						float64(results.Stat.Avg)/float64(time.Millisecond),
+						float64(results.Stat.Jitter)/float64(time.Millisecond),
+					)
+				}
 			}
 		}
 	}
 }
 
 func monitorFlows() {
-
 	err := hal.flows.state.FlowRoutine(1, "0.0.0.0", 2055, true)
 	if err != nil {
 		log.Fatalf("Fatal error: could not monitor flows (%v)", err)
