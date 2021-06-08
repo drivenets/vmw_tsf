@@ -730,20 +730,17 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		}
 	}
 
-	hal.aclRules[accessListInitId] = fmt.Sprintf("%d:%s:%s:%d:%d:%s",
-		fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort,
-		findInterfaceByNextHop(nh).NextHop)
+	hal.aclRules[accessListInitId] = fk.AsKey()
 
 	accessListInitId += 10
 	return nil
 }
 
-func (hal *DnHalImpl) RemoveSteer(fk *FlowKey, nh string) error {
+func (hal *DnHalImpl) RemoveSteer(fk *FlowKey) error {
 	ruleId := -1
+	target := fk.AsKey()
 	for k, v := range hal.aclRules {
-		if v == fmt.Sprintf("%d:%s:%s:%d:%d:%s",
-			fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort,
-			findInterfaceByNextHop(nh).NextHop) {
+		if v == target {
 			ruleId = k
 		}
 	}
@@ -753,7 +750,7 @@ func (hal *DnHalImpl) RemoveSteer(fk *FlowKey, nh string) error {
 
 	session := NetConfConnector()
 	log.Printf("Removing acl: %s:%d -> %s:%d, nh: %s, rule-id: %d",
-		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh, ruleId)
+		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, ruleId)
 	_, err := session.Exec(netconf.RawMethod(fmt.Sprintf(DeleteAclRuleByID, ruleId)))
 	if err != nil {
 		return err
@@ -860,4 +857,8 @@ func NetConfConnector() *netconf.Session {
 	}
 	//defer netconfSession.Close()
 	return netconfSession
+}
+
+func (h *DnHalImpl) AclRuleCacheAdd(fk *FlowKey, idx int) {
+	h.aclRules[idx] = fk.AsKey()
 }

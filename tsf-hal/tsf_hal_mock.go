@@ -33,8 +33,8 @@ func (*DnHalMockImpl) Steer(fk *FlowKey, nh string) error {
 	return nil
 }
 
-func (*DnHalMockImpl) RemoveSteer(fk *FlowKey, nh string) error {
-	fmt.Printf("delete steer flow: %s to next hop: %s\n", fk, nh)
+func (*DnHalMockImpl) RemoveSteer(fk *FlowKey) error {
+	fmt.Printf("delete steer flow: %s\n", fk)
 	return nil
 }
 
