@@ -145,6 +145,18 @@ var CreateDefaultAclRule = `
                                 <rule-id>65434</rule-id>
                                 <config-items>
                                    <rule-type>allow</rule-type>
+                                  <ipv4-matches>
+                                       <ipv4-acl-match>
+                                           <source-ipv4></source-ipv4>
+                                           <destination-ipv4></destination-ipv4>
+                                       </ipv4-acl-match>
+                                   </ipv4-matches>
+                                   <matches>
+                                       <l4-acl-match>
+                                           <source-port-range></source-port-range>
+                                           <destination-port-range></destination-port-range>
+                                       </l4-acl-match>
+                                   </matches>
                                 </config-items>
                             </rule>
                         </rules>
