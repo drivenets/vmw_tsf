@@ -17,6 +17,11 @@ type FlowKey struct {
 	DstPort  uint16
 }
 
+type SteerItem struct {
+	Rule    *FlowKey
+	NextHop string
+}
+
 // Note interface naming needs a translation layer between NCP ports
 // used by the SI and interfaces presented to the HALO container
 //type string string
@@ -73,6 +78,7 @@ type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 // DnHal interface
 type DnHal interface {
 	Steer(*FlowKey, string) error
+	SteerBulk([]*SteerItem) error
 	RemoveSteer(*FlowKey) error
 	GetInterfaces(InterfaceVisitor) error // WILL BE DEPRECATED (returns both LAN and WAN)
 	GetLanInterfaces(InterfaceVisitor) error
