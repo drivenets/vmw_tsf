@@ -796,7 +796,7 @@ func (hal *DnHalImpl) RemoveSteer(fk *FlowKey) error {
 func SteeringAclCleanup() error {
 	session := NetConfConnector()
 
-	log.Info("removing all rules under Steering bucket if any")
+	log.Info("Removing all Steering rules")
 	_, err := session.Exec(netconf.RawMethod(DeleteAllAclRules))
 	if err != nil {
 		return err
@@ -811,7 +811,7 @@ func SteeringAclCleanup() error {
 		}
 	}
 
-	log.Info("Create default ACL rule")
+	log.Info("Creating default ACL rule")
 	_, err = session.Exec(netconf.RawMethod(CreateDefaultAclRule))
 	if err != nil {
 		log.Println(err.Error())
