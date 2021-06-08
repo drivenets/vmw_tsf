@@ -11,7 +11,6 @@ import (
 
 	"github.com/Juniper/go-netconf/netconf"
 	"github.com/openconfig/gnmi/proto/gnmi"
-	pb "github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
@@ -182,7 +181,7 @@ func OptionInterfaceNetFlowId(nfid uint32) OptionInterface {
 	}
 }
 
-func OptionInterfaceUpdateNetFlowId(client pb.GNMIClient) OptionInterface {
+func OptionInterfaceUpdateNetFlowId(client gnmi.GNMIClient) OptionInterface {
 	return func(ifc *Interface) error {
 		var err error
 
@@ -276,7 +275,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 		log.Fatal("failed to connect to gRPC server: %s. Reason: %w", hal.grpcAddr, err)
 	}
 	defer conn.Close()
-	client := pb.NewGNMIClient(conn)
+	client := gnmi.NewGNMIClient(conn)
 
 	if haloIf, ok = os.LookupEnv("HALO_LOCAL"); ok {
 		if dnIf, ok = os.LookupEnv("HALO_LOCAL_IFACE"); !ok {
@@ -336,22 +335,22 @@ func (hal *DnHalImpl) InitInterfaces() {
 
 const DRIVENETS_IFINDEX_PATH_TEMPLATE = "/drivenets-top/interfaces/interface[name=%s]/oper-items/if-index"
 
-func getDnIfIndex(client pb.GNMIClient, lower string) (uint32, error) {
+func getDnIfIndex(client gnmi.GNMIClient, lower string) (uint32, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
 	var err error
 
-	var pathList []*pb.Path
+	var pathList []*gnmi.Path
 	idxPath := fmt.Sprintf(DRIVENETS_IFINDEX_PATH_TEMPLATE, lower)
 	pbPath, err := ygot.StringToPath(idxPath, ygot.StructuredPath, ygot.StringSlicePath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to convert %q to gNMI Path. Reason: %w", idxPath, err)
 	}
 	pathList = append(pathList, pbPath)
-	resp, err := client.Get(ctx, &pb.GetRequest{
+	resp, err := client.Get(ctx, &gnmi.GetRequest{
 		Path:     pathList,
-		Encoding: pb.Encoding_JSON,
+		Encoding: gnmi.Encoding_JSON,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("request failed for path %s", pathList)
@@ -446,7 +445,7 @@ func findInterfaceByNextHop(nh string) *Interface {
 	return nil
 }
 
-func subscribeForInterfaceStats(client pb.GNMIClient) (pb.GNMI_SubscribeClient, error) {
+func subscribeForInterfaceStats(client gnmi.GNMIClient) (gnmi.GNMI_SubscribeClient, error) {
 	sc, err := client.Subscribe(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("could not subscribe to gNMI. Reason: %w", err)
@@ -458,18 +457,18 @@ func subscribeForInterfaceStats(client pb.GNMIClient) (pb.GNMI_SubscribeClient, 
 	for _, ifc := range hal.interfaces.Map.Lower2Interface {
 		speed, counters := interfaceOperPaths(ifc.Lower)
 		sample := uint64(time.Duration(hal.interfaces.UpdateInterval) * time.Second)
-		sc.Send(&pb.SubscribeRequest{
-			Request: &pb.SubscribeRequest_Subscribe{
-				Subscribe: &pb.SubscriptionList{
-					Subscription: []*pb.Subscription{{
+		sc.Send(&gnmi.SubscribeRequest{
+			Request: &gnmi.SubscribeRequest_Subscribe{
+				Subscribe: &gnmi.SubscriptionList{
+					Subscription: []*gnmi.Subscription{{
 						Path:           speed,
 						SampleInterval: sample,
 					}, {
 						Path:           counters,
 						SampleInterval: sample,
 					}},
-					Mode:     pb.SubscriptionList_STREAM,
-					Encoding: pb.Encoding_JSON,
+					Mode:     gnmi.SubscriptionList_STREAM,
+					Encoding: gnmi.Encoding_JSON,
 				},
 			},
 		})
@@ -484,7 +483,7 @@ func monitorInterfaces() {
 	}
 	defer conn.Close()
 
-	client := pb.NewGNMIClient(conn)
+	client := gnmi.NewGNMIClient(conn)
 	sc, err := subscribeForInterfaceStats(client)
 
 	if err != nil {
