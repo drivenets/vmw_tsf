@@ -90,7 +90,7 @@ func clearScreen() {
 	fmt.Print("\033[H\033[2J")
 }
 
-func monitorInterfaces(h hal.DnHal) {
+func printInterfaces(h hal.DnHal) {
 	if !monIfcOpt {
 		return
 	}
@@ -120,7 +120,7 @@ func monitorInterfaces(h hal.DnHal) {
 	}
 }
 
-func monitorFlows(h hal.DnHal) {
+func printFlows(h hal.DnHal) {
 	if !monFlowsOpt {
 		return
 	}
@@ -177,8 +177,8 @@ func main() {
 	for {
 		clearScreen()
 		fmt.Println(time.Now())
-		monitorInterfaces(h)
-		monitorFlows(h)
+		printInterfaces(h)
+		printFlows(h)
 		time.Sleep(time.Duration(monInterval) * time.Second)
 	}
 }
