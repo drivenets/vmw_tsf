@@ -695,19 +695,36 @@ func SetAclRuleIndex(idx int) {
 	accessListInitId = idx
 }
 
-func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
+func commitChanges() error {
 	session := NetConfConnector()
 
-	log.Printf("Adding acl: %s:%d -> %s:%d nh: %s",
-		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh)
+	log.Info("Committing changes")
+	_, err := session.Exec(netconf.RawMethod(Commit))
+	if err != nil {
+		if strings.Contains(err.Error(), "Commit failed: empty commit") {
+			log.Println(err.Error())
+		} else {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func addSteerRule(fk *FlowKey, nh string) (int, error) {
+	session := NetConfConnector()
+	currentRuleId := accessListInitId
+	accessListInitId += 10
+	log.Printf("Adding acl: %s:%d -> %s:%d, nh: %s, %d",
+		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh, currentRuleId)
 	ifc := findInterfaceByNextHop(nh)
 	if ifc == nil {
 		err := fmt.Errorf("no interface with next-hop: %s", nh)
 		log.Warn(err)
-		return err
+		return 0, err
 	}
 	createAcl := fmt.Sprintf(CreateParameterizedAclRule,
-		accessListInitId,
+		currentRuleId,
 		fk.Protocol,
 		fk.SrcAddr,
 		fk.SrcPort,
@@ -717,22 +734,48 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	//log.Printf("NetConf: %s", createAcl)
 	_, err := session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
+		return 0, err
+	}
+	return currentRuleId, nil
+}
+
+func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
+	idx, err := addSteerRule(fk, nh)
+	if err != nil {
 		return err
 	}
-
-	log.Printf("Committing changes")
-	_, err = session.Exec(netconf.RawMethod(Commit))
+	err = commitChanges()
 	if err != nil {
-		if strings.Contains(err.Error(), "Commit failed: empty commit") {
-			log.Println(err.Error())
-		} else {
+		return err
+	}
+	hal.aclRules[idx] = fk.AsKey()
+
+	log.Println(hal.aclRules)
+	return nil
+}
+
+func (hal *DnHalImpl) SteerBulk(rules []*SteerItem) error {
+	rulesMap := make(map[int]string)
+	for _, rule := range rules {
+		fk := rule.Rule
+		nh := rule.NextHop
+		idx, err := addSteerRule(fk, nh)
+		rulesMap[idx] = fk.AsKey()
+		if err != nil {
 			return err
 		}
 	}
 
-	hal.aclRules[accessListInitId] = fk.AsKey()
+	err := commitChanges()
+	if err != nil {
+		return err
+	}
 
-	accessListInitId += 10
+	for k, v := range rulesMap {
+		hal.aclRules[k] = v
+	}
+
+	log.Println(hal.aclRules)
 	return nil
 }
 
