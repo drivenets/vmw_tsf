@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 )
 
 /*
@@ -33,7 +34,7 @@ const TWAMP_DIALER_TIMEOUT = 10
 
 func (c *TwampClient) Connect(hostname string) (*TwampConnection, error) {
 	// connect to remote host
-	d := net.Dialer{Timeout: TWAMP_DIALER_TIMEOUT}
+	d := net.Dialer{Timeout: TWAMP_DIALER_TIMEOUT * time.Second}
 	conn, err := d.Dial("tcp", hostname)
 	if err != nil {
 		return nil, err
