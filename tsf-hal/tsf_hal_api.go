@@ -44,7 +44,7 @@ type InterfaceTelemetry struct {
 	// An interface is mapped 1:1 to a tunnel between two HALO
 	// neighbors. The delay and jitter in this case refers to the
 	// link represented by this interface.
-	// (For LAN interfaces Delan and Jitter have no meaning)
+	// (For LAN interfaces Delay and Jitter have no meaning)
 	Link LinkTelemetry
 }
 
