@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	//stdLog "log"
 	"net"
 	"sort"
@@ -712,7 +713,7 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 		fk.SrcPort,
 		fk.DstAddr,
 		fk.DstPort,
-		ifc.Lower)
+		ifc.NextHop)
 	//log.Printf("NetConf: %s", createAcl)
 	_, err := session.Exec(netconf.RawMethod(createAcl))
 	if err != nil {
@@ -730,7 +731,8 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	}
 
 	hal.aclRules[accessListInitId] = fmt.Sprintf("%d:%s:%s:%d:%d:%s",
-		fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort, hal.interfaces.nextHop[nh])
+		fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort,
+		findInterfaceByNextHop(nh).NextHop)
 
 	accessListInitId += 10
 	return nil
@@ -740,7 +742,8 @@ func (hal *DnHalImpl) RemoveSteer(fk *FlowKey, nh string) error {
 	ruleId := -1
 	for k, v := range hal.aclRules {
 		if v == fmt.Sprintf("%d:%s:%s:%d:%d:%s",
-			fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort, hal.interfaces.nextHop[nh]) {
+			fk.Protocol, fk.SrcAddr, fk.DstAddr, fk.SrcPort, fk.DstPort,
+			findInterfaceByNextHop(nh).NextHop) {
 			ruleId = k
 		}
 	}
