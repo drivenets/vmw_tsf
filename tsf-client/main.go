@@ -167,13 +167,14 @@ func main() {
 		os.Setenv("SKIP_TWAMP", "1")
 	}
 
+	os.Setenv("IFC_SAMPLE", strconv.Itoa(monInterval))
+
 	h := hal.NewDnHal(flushSteerOpt)
 	handleSteer(h)
 	if !(monFlowsOpt || monIfcOpt) {
 		return
 	}
 
-	os.Setenv("IFC_SAMPLE", strconv.Itoa(monInterval))
 	for {
 		clearScreen()
 		fmt.Println(time.Now())
