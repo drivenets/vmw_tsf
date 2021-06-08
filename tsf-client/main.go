@@ -34,10 +34,6 @@ func handleSteer(h hal.DnHal) {
 		panic("missing flow destination")
 	}
 
-	if steerNextHopOpt == "" {
-		panic("missint next hop")
-	}
-
 	var err error
 	var port uint64
 
@@ -74,7 +70,13 @@ func handleSteer(h hal.DnHal) {
 
 	fmt.Println("steer", fk, "to", steerNextHopOpt, "rule-id", aclRuleId)
 	hal.SetAclRuleIndex(aclRuleId)
-	err = h.Steer(fk, steerNextHopOpt)
+	if steerNextHopOpt == "" {
+		impl, _ := h.(*hal.DnHalImpl)
+		impl.AclRuleCacheAdd(fk, aclRuleId)
+		err = h.RemoveSteer(fk)
+	} else {
+		err = h.Steer(fk, steerNextHopOpt)
+	}
 	if err != nil {
 		panic(err)
 	}
