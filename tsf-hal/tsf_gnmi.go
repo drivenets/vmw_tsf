@@ -14,6 +14,7 @@ import (
 	"github.com/openconfig/gnmi/proto/target"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 )
 
 type InterfaceUpdate struct {
@@ -81,8 +82,14 @@ func NewInterfaceMonitor(upd time.Duration) (*InterfaceMonitor, error) {
 	}
 
 	im.ConMgr, err = connection.NewManager(
-		grpc.WithBlock(),
-		grpc.WithInsecure())
+		grpc.WithConnectParams(
+			grpc.ConnectParams{
+				Backoff: backoff.Config{
+					MaxDelay: 5 * time.Second},
+				MinConnectTimeout: 1 * time.Second,
+			}),
+		grpc.WithInsecure(),
+		grpc.WithBlock())
 	if err != nil {
 		log.Errorf("Failed to create gNMI connection manager")
 	}
@@ -91,7 +98,10 @@ func NewInterfaceMonitor(upd time.Duration) (*InterfaceMonitor, error) {
 		manager.Config{
 			Credentials:       cred,
 			ConnectionManager: im.ConMgr,
-			Timeout:           time.Duration(NETCONF_DIAL_TIMEOUT) * time.Second,
+			Timeout:           NETCONF_DIAL_TIMEOUT * time.Second,
+			ConnectError: func(name string, err error) {
+				log.Warnf("Failed to connect gNMI: interface=%s, reason=%v", name, err)
+			},
 			Update: func(g *gnmi.Notification) {
 				im.Update(g)
 			},
