@@ -472,36 +472,6 @@ func updateInterfaceDelayJitter(upper string, delay float64, jitter float64) {
 	}
 }
 
-func subscribeForInterfaceStats(client gnmi.GNMIClient) (gnmi.GNMI_SubscribeClient, error) {
-	sc, err := client.Subscribe(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("could not subscribe to gNMI. Reason: %w", err)
-	}
-
-	hal.interfaces.Map.Lock.RLock()
-	defer hal.interfaces.Map.Lock.RUnlock()
-
-	for _, ifc := range hal.interfaces.Map.Lower2Interface {
-		speed, counters := interfaceOperPaths(ifc.Lower)
-		sc.Send(&gnmi.SubscribeRequest{
-			Request: &gnmi.SubscribeRequest_Subscribe{
-				Subscribe: &gnmi.SubscriptionList{
-					Subscription: []*gnmi.Subscription{{
-						Path:           speed,
-						SampleInterval: uint64(hal.interfaces.UpdateInterval),
-					}, {
-						Path:           counters,
-						SampleInterval: uint64(hal.interfaces.UpdateInterval),
-					}},
-					Mode:     gnmi.SubscriptionList_STREAM,
-					Encoding: gnmi.Encoding_JSON,
-				},
-			},
-		})
-	}
-	return sc, nil
-}
-
 const DRIVENETS_GNMI_UPDATE_LIMIT = 5
 
 func monitorInterfaces() {
