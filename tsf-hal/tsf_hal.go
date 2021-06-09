@@ -82,8 +82,11 @@ type Interface struct {
 type DnHalImpl struct {
 	mutex       sync.Mutex
 	initialized bool
-	grpcAddr    string
-	interfaces  struct {
+	initOptions struct {
+		flushSteer bool
+	}
+	grpcAddr   string
+	interfaces struct {
 		UpdateInterval time.Duration
 		Map            struct {
 			Lock        sync.RWMutex
@@ -106,13 +109,25 @@ type DnHalImpl struct {
 
 var hal = &DnHalImpl{}
 
-func NewDnHal(cleaOldAcl ...bool) DnHal {
-	cleanAcl := false
-	if len(cleaOldAcl) >= 1 {
-		cleanAcl = cleaOldAcl[0]
+type OptionHal func(*DnHalImpl) error
+
+func OptionHalFlushSteer() OptionHal {
+	return func(hal *DnHalImpl) error {
+		hal.initOptions.flushSteer = true
+		return nil
 	}
+}
+
+func NewDnHal(options ...OptionHal) DnHal {
+	for _, op := range options {
+		err := op(hal)
+		if err != nil {
+			log.Fatalf("Failed to setup HAL instance. Reason: ", err)
+		}
+	}
+
 	if !hal.initialized {
-		hal.Init(cleanAcl)
+		hal.Init()
 	}
 	return hal
 }
@@ -128,7 +143,7 @@ func (hal *DnHalImpl) InitFlows() {
 	hal.flows.aggregate = make(map[string]*FlowAggregate)
 }
 
-func (hal *DnHalImpl) Init(cleanAcl bool) {
+func (hal *DnHalImpl) Init() {
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
 
@@ -140,7 +155,7 @@ func (hal *DnHalImpl) Init(cleanAcl bool) {
 	hal.aclRules = make(map[int]string)
 	hal.InitInterfaces()
 
-	if cleanAcl {
+	if hal.initOptions.flushSteer {
 		err := SteeringAclCleanup()
 		if err != nil {
 			log.Fatalf("failed to cleanup old access lists. Reason: %v", err)

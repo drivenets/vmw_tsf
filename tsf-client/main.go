@@ -192,7 +192,11 @@ func main() {
 
 	os.Setenv("IFC_SAMPLE", strconv.Itoa(monInterval))
 
-	h := hal.NewDnHal(flushSteerOpt)
+	opts := make([]hal.OptionHal, 0, 1)
+	if flushSteerOpt {
+		opts = append(opts, hal.OptionHalFlushSteer())
+	}
+	h := hal.NewDnHal(opts...)
 	handleSteer(h)
 	if !(monFlowsOpt || monIfcOpt) {
 		return
