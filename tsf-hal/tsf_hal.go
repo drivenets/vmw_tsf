@@ -488,7 +488,7 @@ func monitorInterfaces() {
 	} else {
 		interval = hal.interfaces.UpdateInterval
 	}
-	im, err := NewInterfaceMonitor(interval)
+	im, err := NewInterfaceMonitor(hal.grpcAddr, interval)
 	if err != nil {
 		log.Fatalf("Failed to start. Reason: %s", err)
 	}
@@ -895,9 +895,7 @@ func NetConfConnector() *netconf.Session {
 	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
 		nc.netconfPassword = "dnroot"
 	}
-	if nc.netconfHost, ok = os.LookupEnv("GRPC_ADDR"); !ok {
-		nc.netconfHost = "localhost"
-	}
+	nc.netconfHost = hal.grpcAddr
 
 	if netconfSession == nil {
 		sshConfig := &ssh.ClientConfig{

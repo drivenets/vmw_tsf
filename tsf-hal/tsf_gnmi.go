@@ -57,16 +57,10 @@ func (dn DnCredentials) Lookup(ctx context.Context, user string) (string, error)
 
 const NETCONF_DIAL_TIMEOUT = 10
 
-func NewInterfaceMonitor(upd time.Duration) (*InterfaceMonitor, error) {
+func NewInterfaceMonitor(addr string, upd time.Duration) (*InterfaceMonitor, error) {
 	var err error
 
 	cred := NewDnCredentials()
-
-	var addr string
-	var ok bool
-	if addr, ok = os.LookupEnv("GRPC_ADDR"); !ok {
-		addr = "127.0.0.1:50051"
-	}
 
 	im := &InterfaceMonitor{
 		UpdateInterval: upd,
