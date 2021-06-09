@@ -750,7 +750,6 @@ func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
 	}
 	hal.aclRules[idx] = fk.AsKey()
 
-	log.Println(hal.aclRules)
 	return nil
 }
 
@@ -775,7 +774,6 @@ func (hal *DnHalImpl) SteerBulk(rules []*SteerItem) error {
 		hal.aclRules[k] = v
 	}
 
-	log.Println(hal.aclRules)
 	return nil
 }
 
@@ -835,7 +833,6 @@ func (hal *DnHalImpl) RemoveSteerBulk(rules []*FlowKey) error {
 		delete(hal.aclRules, idx)
 	}
 
-	log.Println(hal.aclRules)
 	return nil
 }
 
