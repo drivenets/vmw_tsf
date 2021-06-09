@@ -23,6 +23,7 @@ var steerToOpt string
 var steerProtoOpt string
 var steerNextHopOpt string
 var aclRuleId int
+var noClsOpt bool
 
 func handleSteer(h hal.DnHal) {
 
@@ -110,6 +111,9 @@ func handleSteer(h hal.DnHal) {
 }
 
 func clearScreen() {
+	if noClsOpt {
+		return
+	}
 	fmt.Print("\033[H\033[2J")
 }
 
@@ -183,6 +187,7 @@ func main() {
 	flag.StringVar(&steerToOpt, "to", "", "steer flow destination ip:port")
 	flag.StringVar(&steerProtoOpt, "proto", "tcp", "steer flow protocol")
 	flag.StringVar(&steerNextHopOpt, "next-hop", "", "steer to next-hop")
+	flag.BoolVar(&noClsOpt, "nocls", false, "do not clear screen")
 	flag.IntVar(&aclRuleId, "id", 10, "steer rule id")
 	flag.Parse()
 
