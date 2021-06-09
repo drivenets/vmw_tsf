@@ -788,7 +788,7 @@ func removeSteerRule(fk *FlowKey) (int, error) {
 		}
 	}
 	if ruleId == -1 {
-		return ruleId, fmt.Errorf("NO SUCH ACL RULE: %v", fk)
+		return ruleId, fmt.Errorf("no such a rule in cache: %v", fk)
 	}
 
 	session := NetConfConnector()
@@ -831,7 +831,7 @@ func (hal *DnHalImpl) RemoveSteerBulk(rules []*FlowKey) error {
 		return err
 	}
 
-	for idx := range ruleIdxs {
+	for _, idx := range ruleIdxs {
 		delete(hal.aclRules, idx)
 	}
 
