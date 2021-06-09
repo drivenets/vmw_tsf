@@ -81,6 +81,20 @@ func handleSteer(h hal.DnHal) {
 		panic(err)
 	}
 
+	var acl = []*hal.SteerItem{
+		{Rule: fk, NextHop: steerNextHopOpt},
+		{Rule: fk, NextHop: steerNextHopOpt},
+		{Rule: fk, NextHop: steerNextHopOpt}}
+	err = h.SteerBulk(acl)
+	if err != nil {
+		panic(err)
+	}
+
+	//var aclDel = []*hal.FlowKey{fk, fk, fk}
+	//err = h.RemoveSteerBulk(aclDel)
+	//if err != nil {
+	//	panic(err)
+	//}
 	//fmt.Println("delete steer", fk, "to", steerNextHopOpt, "rule-id")
 	//err = h.RemoveSteer(fk, steerNextHopOpt)
 	//if err != nil {
