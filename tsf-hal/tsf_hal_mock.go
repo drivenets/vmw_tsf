@@ -34,13 +34,19 @@ func (*DnHalMockImpl) Steer(fk *FlowKey, nh string) error {
 }
 
 func (*DnHalMockImpl) SteerBulk(rules []*SteerItem) error {
-	//fmt.Printf("steer flow: %s to next hop: %s\n", fk, nh)
+	fmt.Printf("steer flows: %v", rules)
 	return nil
 }
 func (*DnHalMockImpl) RemoveSteer(fk *FlowKey) error {
 	fmt.Printf("delete steer flow: %s\n", fk)
 	return nil
 }
+
+func (*DnHalMockImpl) RemoveSteerBulk(fk []*FlowKey) error {
+	fmt.Printf("delete steer flows: %v\n", fk)
+	return nil
+}
+
 
 var itl = map[string]InterfaceTelemetry{
 	"halo1": {

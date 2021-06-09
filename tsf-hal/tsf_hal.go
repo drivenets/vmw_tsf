@@ -779,7 +779,7 @@ func (hal *DnHalImpl) SteerBulk(rules []*SteerItem) error {
 	return nil
 }
 
-func (hal *DnHalImpl) RemoveSteer(fk *FlowKey) error {
+func removeSteerRule(fk *FlowKey) (int, error) {
 	ruleId := -1
 	target := fk.AsKey()
 	for k, v := range hal.aclRules {
@@ -788,24 +788,54 @@ func (hal *DnHalImpl) RemoveSteer(fk *FlowKey) error {
 		}
 	}
 	if ruleId == -1 {
-		return fmt.Errorf("NO SUCH ACL RULE: %v", fk)
+		return ruleId, fmt.Errorf("NO SUCH ACL RULE: %v", fk)
 	}
 
 	session := NetConfConnector()
-	log.Printf("Removing acl: %s:%d -> %s:%d, nh: %s, rule-id: %d",
+	log.Printf("Removing acl: %s:%d -> %s:%d, rule-id: %d",
 		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, ruleId)
 	_, err := session.Exec(netconf.RawMethod(fmt.Sprintf(DeleteAclRuleByID, ruleId)))
 	if err != nil {
-		return err
+		return ruleId, err
 	}
+	return ruleId, nil
+}
 
-	log.Printf("Committing changes")
-	_, err = session.Exec(netconf.RawMethod(Commit))
+func (hal *DnHalImpl) RemoveSteer(fk *FlowKey) error {
+	idx, err := removeSteerRule(fk)
 	if err != nil {
 		return err
 	}
 
-	delete(hal.aclRules, ruleId)
+	err = commitChanges()
+	if err != nil {
+		return err
+	}
+
+	delete(hal.aclRules, idx)
+	return nil
+}
+
+func (hal *DnHalImpl) RemoveSteerBulk(rules []*FlowKey) error {
+	var ruleIdxs []int
+	for _, rule := range rules {
+		idx, err := removeSteerRule(rule)
+		if err != nil {
+			return err
+		}
+		ruleIdxs = append(ruleIdxs, idx)
+	}
+
+	err := commitChanges()
+	if err != nil {
+		return err
+	}
+
+	for idx := range ruleIdxs {
+		delete(hal.aclRules, idx)
+	}
+
+	log.Println(hal.aclRules)
 	return nil
 }
 
