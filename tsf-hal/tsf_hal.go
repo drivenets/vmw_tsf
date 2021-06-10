@@ -3,20 +3,18 @@ package hal
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
-
-	//stdLog "log"
-	"net"
-	"sort"
-	"strings"
-
 	"github.com/Juniper/go-netconf/netconf"
 	"github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
+	stdLog "log"
+	"net"
+	"sort"
+	"strings"
 
-	//"log"
 	"os"
 	"strconv"
 	"sync"
@@ -143,6 +141,63 @@ func (hal *DnHalImpl) InitFlows() {
 	hal.flows.aggregate = make(map[string]*FlowAggregate)
 }
 
+func (hal *DnHalImpl) InitNetConf() {
+	log.Info("Initializing netconf client")
+	session := NetConfConnector()
+
+	obj := GetConfig{
+		Filter: &Filter{
+			DrivenetsTop: &DrivenetsTop{
+				AttrXmlnsdnAccessControlList: "http://drivenets.com/ns/yang/dn-access-control-list",
+				AccessListsDnAccessControlList: AccessListsDnAccessControlList{
+					Ipv4: &Ipv4{
+						AccessList: AccessList{Name: HALO_ACL_BUCKET_NAME},
+					},
+				},
+			},
+		},
+		Source: &Source{RunningConfig: &RunningConfig{}},
+	}
+
+	xmlString, _ := xml.MarshalIndent(obj, "", "    ")
+	data, err := session.Exec(netconf.RawMethod(xmlString))
+	if err != nil {
+		log.Errorf("Failed to retrieve ACL rules, err: %v", err)
+		panic(err)
+	}
+
+	var response Data
+	if err := xml.Unmarshal([]byte(data.Data), &response); err != nil {
+		panic(err)
+	}
+
+	protocols := map[string]FlowProto{"tcp(0x06)": TCP, "udp(0x11)": UDP}
+	for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
+		srcIpv4Addr, _, err := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.Ipv4AclMatch.SourceIpv4)
+		if err != nil {
+			log.Warn(v, err)
+			continue
+		}
+
+		DstIpv4Addr, _, err := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.Ipv4AclMatch.DestinationIpv4)
+		if err != nil {
+			log.Warn(err)
+			continue
+		}
+
+		fk := FlowKey{
+			Protocol: protocols[v.RuleConfigItems.Protocol],
+			SrcAddr:  srcIpv4Addr,
+			DstAddr:  DstIpv4Addr,
+			SrcPort:  v.RuleConfigItems.Matches.L4AclMatch.SourcePortRange.LowerPort,
+			DstPort:  v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort,
+		}
+		log.Printf("Loading rule to cache - id: %d, rule: %s, next-hop: %v", v.RuleId, fk.AsKey(), v.RuleConfigItems.Nexthops.Nexthop1.Addr)
+		hal.AclRuleCacheAdd(&fk, v.RuleId)
+	}
+
+}
+
 func (hal *DnHalImpl) Init() {
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
@@ -164,6 +219,7 @@ func (hal *DnHalImpl) Init() {
 	go monitorInterfaces()
 
 	hal.InitFlows()
+	hal.InitNetConf()
 
 	go monitorFlows()
 
@@ -172,7 +228,7 @@ func (hal *DnHalImpl) Init() {
 
 const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 5
 const HALO_INTERFACES_COUNT = 2
-const ACL_NAME = "Steering"
+const HALO_ACL_BUCKET_NAME = "Steering"
 
 type OptionInterface func(*Interface) error
 
@@ -696,66 +752,99 @@ func commitChanges() error {
 	return nil
 }
 
-func addSteerRule(fk *FlowKey, nh string) (int, error) {
-	session := NetConfConnector()
-	currentRuleId := accessListInitId
-	accessListInitId += 10
-	log.Printf("Adding acl: %s:%d -> %s:%d, nh: %s, %d",
-		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, nh, currentRuleId)
-	ifc := findInterfaceByNextHop(nh)
-	if ifc == nil {
-		err := fmt.Errorf("no interface with next-hop: %s", nh)
-		log.Warn(err)
-		return 0, err
+func getAclXml(rules []Rule) EditConfig {
+	return EditConfig{
+		Config: Config{
+			DrivenetsTop: DrivenetsTop{
+				AttrXmlnsdnAccessControlList: "http://drivenets.com/ns/yang/dn-access-control-list",
+				AccessListsDnAccessControlList: AccessListsDnAccessControlList{
+					Ipv4: &Ipv4{
+						AccessList: AccessList{
+							ConfigItems: ConfigItems{Name: HALO_ACL_BUCKET_NAME},
+							Name:        HALO_ACL_BUCKET_NAME,
+							Rules:       Rules{Rule: rules},
+						},
+					},
+				},
+			},
+		},
+		TargetCandidate: TargetCandidate{Candidate: Candidate{}},
 	}
-	createAcl := fmt.Sprintf(CreateParameterizedAclRule,
-		currentRuleId,
-		fk.Protocol,
-		fk.SrcAddr,
-		fk.SrcPort,
-		fk.DstAddr,
-		fk.DstPort,
-		ifc.NextHop)
-	//log.Printf("NetConf: %s", createAcl)
-	_, err := session.Exec(netconf.RawMethod(createAcl))
-	if err != nil {
-		return 0, err
-	}
-	return currentRuleId, nil
 }
 
-func (hal *DnHalImpl) Steer(fk *FlowKey, nh string) error {
-	idx, err := addSteerRule(fk, nh)
+func (hal *DnHalImpl) Steer(rules []*SteerItem) error {
+	ruleIdxMap := make(map[int]string)
+	rulesList := make([]Rule, 0, len(rules))
+	session := NetConfConnector()
+
+	for _, rule := range rules {
+		fk := rule.Rule
+		nh := rule.NextHop
+
+		var nextHop1 net.IP
+		if nh != "" {
+			ifc := findInterfaceByNextHop(nh)
+			nextHop1 = ifc.NextHop
+			if ifc == nil {
+				err := fmt.Errorf("no interface with next-hop: %s", nh)
+				log.Warn(err)
+				return err
+			}
+		} else {
+			nextHop1 = nil
+		}
+
+		ruleAsKey := fk.AsKey()
+		currentRuleId := -1
+		for k, v := range hal.aclRules {
+			if v == ruleAsKey {
+				currentRuleId = k
+				break
+			}
+		}
+		if currentRuleId == -1 {
+			currentRuleId = accessListInitId
+			accessListInitId += 10
+		}
+
+		ruleIdxMap[currentRuleId] = ruleAsKey
+
+		rulesList = append(rulesList, Rule{
+			RuleId: currentRuleId,
+			RuleConfigItems: RuleConfigItems{
+				Ipv4Matches: Ipv4Matches{
+					Ipv4AclMatch: Ipv4AclMatch{
+						SourceIpv4:      fmt.Sprintf("%s/32", fk.SrcAddr),
+						DestinationIpv4: fmt.Sprintf("%s/32", fk.DstAddr),
+					},
+				},
+				Matches: Matches{
+					L4AclMatch: L4AclMatch{
+						DestinationPortRange: DestinationPortRange{LowerPort: fk.DstPort},
+						SourcePortRange:      SourcePortRange{LowerPort: fk.SrcPort},
+					},
+				},
+				Nexthops: Nexthops{
+					Nexthop1: Nexthop1{Addr: nextHop1}},
+				Protocol: fmt.Sprintf("%s", fk.Protocol),
+				RuleType: "allow",
+			},
+		})
+	}
+
+	xmlStruct := getAclXml(rulesList)
+	xmlString, _ := xml.MarshalIndent(xmlStruct, "", "    ")
+	_, err := session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
 		return err
 	}
+
 	err = commitChanges()
 	if err != nil {
 		return err
 	}
-	hal.aclRules[idx] = fk.AsKey()
 
-	return nil
-}
-
-func (hal *DnHalImpl) SteerBulk(rules []*SteerItem) error {
-	rulesMap := make(map[int]string)
-	for _, rule := range rules {
-		fk := rule.Rule
-		nh := rule.NextHop
-		idx, err := addSteerRule(fk, nh)
-		rulesMap[idx] = fk.AsKey()
-		if err != nil {
-			return err
-		}
-	}
-
-	err := commitChanges()
-	if err != nil {
-		return err
-	}
-
-	for k, v := range rulesMap {
+	for k, v := range ruleIdxMap {
 		hal.aclRules[k] = v
 	}
 
@@ -850,6 +939,7 @@ func (hal *DnHalImpl) RemoveSteerBulk(rules []*FlowKey) error {
 
 func SteeringAclCleanup() error {
 	session := NetConfConnector()
+	defaultRuleId := 65434
 
 	log.Info("Removing all Steering rules")
 	_, err := session.Exec(netconf.RawMethod(DeleteAllAclRules))
@@ -857,21 +947,17 @@ func SteeringAclCleanup() error {
 		return err
 	}
 
-	_, err = session.Exec(netconf.RawMethod(Commit))
-	if err != nil {
-		if strings.Contains(err.Error(), "Commit failed: empty commit") {
-			log.Println(err.Error())
-		} else {
-			return err
-		}
-	}
-
 	log.Info("Creating default ACL rule")
-	_, err = session.Exec(netconf.RawMethod(CreateDefaultAclRule))
+	rulesList := make([]Rule, 0, 1)
+	rulesList = append(rulesList, Rule{
+		RuleId: defaultRuleId, RuleConfigItems: RuleConfigItems{RuleType: "allow"}})
+	xmlStruct := getAclXml(rulesList)
+	xmlString, _ := xml.MarshalIndent(xmlStruct, "", "    ")
+	_, err = session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
-		log.Println(err.Error())
 		return err
 	}
+
 	log.Printf("Committing changes")
 	_, err = session.Exec(netconf.RawMethod(Commit))
 	if err != nil {
@@ -886,8 +972,8 @@ var netconfSession *netconf.Session
 func NetConfConnector() *netconf.Session {
 	var err error
 	var ok bool
-	//log := stdLog.New(os.Stderr, "netconf ", 1)
-	//netconf.SetLog(netconf.NewStdLog(log, netconf.LogDebug))
+	defaultLog := stdLog.New(os.Stderr, "netconf ", 1)
+	netconf.SetLog(netconf.NewStdLog(defaultLog, netconf.LogDebug))
 
 	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
 		nc.netconfUser = "dnroot"
