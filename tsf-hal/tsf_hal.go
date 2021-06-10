@@ -132,7 +132,7 @@ func NewDnHal(options ...OptionHal) DnHal {
 	return hal
 }
 
-const DRIVENETS_GRPC_ADDR = "localhost"
+const DRIVENETS_DNOS_ADDR = "localhost"
 
 func (hal *DnHalImpl) InitFlows() {
 	hal.flows.state = &gfu.StateNetFlow{
@@ -148,8 +148,8 @@ func (hal *DnHalImpl) Init() {
 	defer hal.mutex.Unlock()
 
 	var ok bool
-	if hal.grpcAddr, ok = os.LookupEnv("GRPC_ADDR"); !ok {
-		hal.grpcAddr = DRIVENETS_GRPC_ADDR
+	if hal.grpcAddr, ok = os.LookupEnv("DNOS_ADDR"); !ok {
+		hal.grpcAddr = DRIVENETS_DNOS_ADDR
 	}
 	hal.grpcAddr = hal.grpcAddr + ":50051"
 	hal.aclRules = make(map[int]string)
@@ -895,8 +895,8 @@ func NetConfConnector() *netconf.Session {
 	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
 		nc.netconfPassword = "dnroot"
 	}
-	if nc.netconfHost, ok = os.LookupEnv("GRPC_ADDR"); !ok {
-		nc.netconfHost = "localhost"
+	if nc.netconfHost, ok = os.LookupEnv("DNOS_ADDR"); !ok {
+		nc.netconfHost = DRIVENETS_DNOS_ADDR
 	}
 
 	if netconfSession == nil {
