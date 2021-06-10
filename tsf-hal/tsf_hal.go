@@ -895,7 +895,9 @@ func NetConfConnector() *netconf.Session {
 	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
 		nc.netconfPassword = "dnroot"
 	}
-	nc.netconfHost = hal.grpcAddr
+	if nc.netconfHost, ok = os.LookupEnv("GRPC_ADDR"); !ok {
+		nc.netconfHost = "localhost"
+	}
 
 	if netconfSession == nil {
 		sshConfig := &ssh.ClientConfig{
