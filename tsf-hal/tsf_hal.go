@@ -10,7 +10,7 @@ import (
 	"github.com/openconfig/ygot/ygot"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
-	stdLog "log"
+	//stdLog "log"
 	"net"
 	"sort"
 	"strings"
@@ -972,8 +972,8 @@ var netconfSession *netconf.Session
 func NetConfConnector() *netconf.Session {
 	var err error
 	var ok bool
-	defaultLog := stdLog.New(os.Stderr, "netconf ", 1)
-	netconf.SetLog(netconf.NewStdLog(defaultLog, netconf.LogDebug))
+	//defaultLog := stdLog.New(os.Stderr, "netconf ", 1)
+	//netconf.SetLog(netconf.NewStdLog(defaultLog, netconf.LogDebug))
 
 	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
 		nc.netconfUser = "dnroot"
