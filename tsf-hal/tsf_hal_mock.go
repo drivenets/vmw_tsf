@@ -27,7 +27,7 @@ func (hal *DnHalMockImpl) Init() {
 }
 
 // type FlowSteeringTable map[Ipv4FlowKey]Ipv4Addr
-func (*DnHalMockImpl) Steer(rules []*SteerItem) error {
+func (*DnHalMockImpl) Steer(rules []SteerItem) error {
 	fmt.Printf("steer flows: %v", rules)
 	return nil
 }
