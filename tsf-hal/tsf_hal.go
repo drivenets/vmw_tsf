@@ -772,7 +772,7 @@ func getAclXml(rules []Rule) EditConfig {
 	}
 }
 
-func (hal *DnHalImpl) Steer(rules []*SteerItem) error {
+func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 	ruleIdxMap := make(map[int]string)
 	rulesList := make([]Rule, 0, len(rules))
 	session := NetConfConnector()

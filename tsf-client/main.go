@@ -76,7 +76,7 @@ func handleSteer(h hal.DnHal) {
 		impl.AclRuleCacheAdd(fk, aclRuleId)
 		err = h.RemoveSteer(fk)
 	} else {
-		err = h.Steer([]*hal.SteerItem{{Rule: fk, NextHop: steerNextHopOpt}})
+		err = h.Steer([]hal.SteerItem{{Rule: fk, NextHop: steerNextHopOpt}})
 	}
 	if err != nil {
 		panic(err)
@@ -87,7 +87,7 @@ func handleSteer(h hal.DnHal) {
 	//fk3 := &hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("3.4.6.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
 	//fk4 := &hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("4.4.7.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
 	//
-	//var acl = []*hal.SteerItem{
+	//var acl = []hal.SteerItem{
 	//	{Rule: fk1, NextHop: steerNextHopOpt},
 	//	{Rule: fk2, NextHop: steerNextHopOpt},
 	//	{Rule: fk3, NextHop: steerNextHopOpt},
@@ -96,7 +96,7 @@ func handleSteer(h hal.DnHal) {
 	//if err != nil {
 	//	panic(err)
 	//}
-	//
+
 	//var aclDel = []*hal.FlowKey{fk1, fk2, fk3, fk4}
 	//err = h.RemoveSteerBulk(aclDel)
 	//if err != nil {
