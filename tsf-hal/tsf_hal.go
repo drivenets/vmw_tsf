@@ -10,7 +10,7 @@ import (
 	"github.com/openconfig/ygot/ygot"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
-	//stdLog "log"
+	stdLog "log"
 	"net"
 	"sort"
 	"strings"
@@ -172,14 +172,15 @@ func (hal *DnHalImpl) InitNetConf() {
 	}
 
 	protocols := map[string]FlowProto{"tcp(0x06)": TCP, "udp(0x11)": UDP}
+	maxID := accessListID
 	for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
-		srcIpv4Addr, _, err := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.Ipv4AclMatch.SourceIpv4)
+		srcIpv4Addr, _, err := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.SourceIpv4)
 		if err != nil {
 			log.Warn(v, err)
 			continue
 		}
 
-		DstIpv4Addr, _, err := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.Ipv4AclMatch.DestinationIpv4)
+		DstIpv4Addr, _, err := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.DestinationIpv4)
 		if err != nil {
 			log.Warn(err)
 			continue
@@ -192,13 +193,19 @@ func (hal *DnHalImpl) InitNetConf() {
 			SrcPort:  v.RuleConfigItems.Matches.L4AclMatch.SourcePortRange.LowerPort,
 			DstPort:  v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort,
 		}
-		log.Printf("Loading rule to cache - id: %d, rule: %s, next-hop: %v", v.RuleId, fk.AsKey(), v.RuleConfigItems.Nexthops.Nexthop1.Addr)
+		log.Infof("Loading rule to cache - id: %d, rule: %s, next-hop: %v", v.RuleId, fk.AsKey(), v.RuleConfigItems.Nexthop1)
 		hal.AclRuleCacheAdd(&fk, v.RuleId)
+		if v.RuleId > maxID {
+			accessListID = v.RuleId + 10
+		}
 	}
-
+	log.Debugf("accessListID: %d", accessListID)
 }
 
 func (hal *DnHalImpl) Init() {
+	if _, ok := os.LookupEnv("DEBUG"); ok {
+		log.SetLevel(log.DebugLevel)
+	}
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
 
@@ -733,7 +740,7 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 }
 
 func SetAclRuleIndex(idx int) {
-	accessListInitId = idx
+	accessListID = idx
 }
 
 func commitChanges() error {
@@ -752,15 +759,15 @@ func commitChanges() error {
 	return nil
 }
 
-func getAclXml(rules []Rule) EditConfig {
-	return EditConfig{
+func getAclRuleConfigXml(rules []Rule) ([]byte, error) {
+	conf := EditConfig{
 		Config: Config{
 			DrivenetsTop: DrivenetsTop{
 				AttrXmlnsdnAccessControlList: "http://drivenets.com/ns/yang/dn-access-control-list",
 				AccessListsDnAccessControlList: AccessListsDnAccessControlList{
 					Ipv4: &Ipv4{
 						AccessList: AccessList{
-							ConfigItems: ConfigItems{Name: HALO_ACL_BUCKET_NAME},
+							ConfigItems: &ConfigItems{Name: HALO_ACL_BUCKET_NAME},
 							Name:        HALO_ACL_BUCKET_NAME,
 							Rules:       Rules{Rule: rules},
 						},
@@ -770,18 +777,39 @@ func getAclXml(rules []Rule) EditConfig {
 		},
 		TargetCandidate: TargetCandidate{Candidate: Candidate{}},
 	}
+	return xml.MarshalIndent(conf, "", "    ")
+}
+
+func getAclRulesDeleteXml() ([]byte, error) {
+	conf := EditConfig{
+		Config: Config{
+			DrivenetsTop: DrivenetsTop{
+				AttrXmlnsdnAccessControlList: "http://drivenets.com/ns/yang/dn-access-control-list",
+				AccessListsDnAccessControlList: AccessListsDnAccessControlList{
+					Ipv4: &Ipv4{
+						AccessList: AccessList{
+							Name:  HALO_ACL_BUCKET_NAME,
+							Rules: Rules{AttrNcSpaceoperation: "delete"},
+						},
+					},
+				},
+			},
+		},
+		TargetCandidate: TargetCandidate{Candidate: Candidate{}},
+	}
+	return xml.MarshalIndent(conf, "", "    ")
 }
 
 func (hal *DnHalImpl) Steer(rules []SteerItem) error {
+	session := NetConfConnector()
 	ruleIdxMap := make(map[int]string)
 	rulesList := make([]Rule, 0, len(rules))
-	session := NetConfConnector()
 
 	for _, rule := range rules {
 		fk := rule.Rule
 		nh := rule.NextHop
-
 		var nextHop1 net.IP
+
 		if nh != "" {
 			ifc := findInterfaceByNextHop(nh)
 			nextHop1 = ifc.NextHop
@@ -799,42 +827,43 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 		for k, v := range hal.aclRules {
 			if v == ruleAsKey {
 				currentRuleId = k
+				log.Debugf("rule already exist with id, %d", currentRuleId)
 				break
 			}
 		}
 		if currentRuleId == -1 {
-			currentRuleId = accessListInitId
-			accessListInitId += 10
+			currentRuleId = accessListID
+			accessListID += 10
 		}
 
+		log.Infof("steer", fk, "to", nh, "rule-id", currentRuleId)
 		ruleIdxMap[currentRuleId] = ruleAsKey
-
 		rulesList = append(rulesList, Rule{
 			RuleId: currentRuleId,
-			RuleConfigItems: RuleConfigItems{
-				Ipv4Matches: Ipv4Matches{
-					Ipv4AclMatch: Ipv4AclMatch{
-						SourceIpv4:      fmt.Sprintf("%s/32", fk.SrcAddr),
-						DestinationIpv4: fmt.Sprintf("%s/32", fk.DstAddr),
-					},
+			RuleConfigItems: &RuleConfigItems{
+				Ipv4Matches: &Ipv4Matches{
+					DestinationIpv4: fmt.Sprintf("%s/32", fk.DstAddr),
+					SourceIpv4:      fmt.Sprintf("%s/32", fk.SrcAddr),
 				},
-				Matches: Matches{
+				Matches: &Matches{
 					L4AclMatch: L4AclMatch{
 						DestinationPortRange: DestinationPortRange{LowerPort: fk.DstPort},
 						SourcePortRange:      SourcePortRange{LowerPort: fk.SrcPort},
 					},
 				},
-				Nexthops: Nexthops{
-					Nexthop1: Nexthop1{Addr: nextHop1}},
+				Nexthop1: &nextHop1,
 				Protocol: fmt.Sprintf("%s", fk.Protocol),
 				RuleType: "allow",
 			},
 		})
 	}
 
-	xmlStruct := getAclXml(rulesList)
-	xmlString, _ := xml.MarshalIndent(xmlStruct, "", "    ")
-	_, err := session.Exec(netconf.RawMethod(xmlString))
+	xmlString, err := getAclRuleConfigXml(rulesList)
+	if err != nil {
+		return err
+	}
+
+	_, err = session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
 		return err
 	}
@@ -851,30 +880,39 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 	return nil
 }
 
-func removeSteerRule(fk *FlowKey) (int, error) {
-	ruleId := -1
-	target := fk.AsKey()
-	for k, v := range hal.aclRules {
-		if v == target {
-			ruleId = k
+func (hal *DnHalImpl) RemoveSteer(rules []*FlowKey) error {
+	session := NetConfConnector()
+	rulesToRemove := make([]Rule, 0, len(rules))
+	for _, rule := range rules {
+		target := rule.AsKey()
+		ruleId := -1
+		for k, v := range hal.aclRules {
+			if target == v {
+				ruleId = k
+
+				rulesToRemove = append(rulesToRemove, Rule{
+					RuleId:               ruleId,
+					AttrNcSpaceoperation: "delete",
+				})
+			}
+		}
+		log.Infof("removing %v, rule-id: %d", rule, ruleId)
+		if ruleId == -1 {
+			log.Warnf("rule %v not found in cache, skipping.", rule)
 		}
 	}
-	if ruleId == -1 {
-		return ruleId, fmt.Errorf("no such a rule in cache: %v", fk)
+
+	if len(rulesToRemove) == 0 {
+		log.Infof("nothing to remove..")
+		return nil
 	}
 
-	session := NetConfConnector()
-	log.Printf("Removing acl: %s:%d -> %s:%d, rule-id: %d",
-		fk.SrcAddr, fk.SrcPort, fk.DstAddr, fk.DstPort, ruleId)
-	_, err := session.Exec(netconf.RawMethod(fmt.Sprintf(DeleteAclRuleByID, ruleId)))
+	xmlString, err := getAclRuleConfigXml(rulesToRemove)
 	if err != nil {
-		return ruleId, err
+		return err
 	}
-	return ruleId, nil
-}
 
-func (hal *DnHalImpl) RemoveSteer(fk *FlowKey) error {
-	idx, err := removeSteerRule(fk)
+	_, err = session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
 		return err
 	}
@@ -884,75 +922,49 @@ func (hal *DnHalImpl) RemoveSteer(fk *FlowKey) error {
 		return err
 	}
 
-	delete(hal.aclRules, idx)
-	return nil
-}
-
-func (hal *DnHalImpl) RemoveSteerBulk(rules []*FlowKey) error {
-	var ruleIdxs []int
-	for _, rule := range rules {
-		idx, err := removeSteerRule(rule)
-		if err != nil {
-			return err
-		}
-		ruleIdxs = append(ruleIdxs, idx)
-	}
-
-	err := commitChanges()
-	if err != nil {
-		return err
-	}
-
-	for _, idx := range ruleIdxs {
-		delete(hal.aclRules, idx)
+	for _, idx := range rulesToRemove {
+		delete(hal.aclRules, idx.RuleId)
 	}
 
 	return nil
 }
-
-//func DeleteAcl(dnIf string) error {
-//	session, err := netconf.DialSSH(
-//		nc.netconfHost,
-//		netconf.SSHConfigPassword(nc.netconfUser, nc.netconfPassword))
-//	if err != nil {
-//		return err
-//	}
-//	defer session.Close()
-//
-//	a := fmt.Sprintf(XMLAclDetach, dnIf)
-//	_, err = session.Exec(netconf.RawMethod(InterfaceConfig))
-//	if err != nil {
-//		return err
-//	}
-//
-//	_, err = session.Exec(netconf.RawMethod(DeleteAccessListByName))
-//	if err != nil {
-//		return err
-//	}
-//
-//	_, err = session.Exec(netconf.RawMethod(Commit))
-//	if err != nil {
-//		return err
-//	}
-//	return nil
-//}
 
 func SteeringAclCleanup() error {
 	session := NetConfConnector()
 	defaultRuleId := 65434
 
 	log.Info("Removing all Steering rules")
-	_, err := session.Exec(netconf.RawMethod(DeleteAllAclRules))
+	cleanRulesXML, err := getAclRulesDeleteXml()
+	if err != nil {
+		return err
+	}
+	_, err = session.Exec(netconf.RawMethod(cleanRulesXML))
 	if err != nil {
 		return err
 	}
 
-	log.Info("Creating default ACL rule")
-	rulesList := make([]Rule, 0, 1)
-	rulesList = append(rulesList, Rule{
-		RuleId: defaultRuleId, RuleConfigItems: RuleConfigItems{RuleType: "allow"}})
-	xmlStruct := getAclXml(rulesList)
-	xmlString, _ := xml.MarshalIndent(xmlStruct, "", "    ")
+	log.Info("Adding default ACL rule")
+	rulesList := []Rule{
+		{
+			RuleConfigItems: &RuleConfigItems{
+				RuleType:    "allow",
+				Protocol:    "any",
+				Ipv4Matches: &Ipv4Matches{SourceIpv4: "any", DestinationIpv4: "any"},
+				Matches: &Matches{
+					L4AclMatch: L4AclMatch{
+						SourcePortRange:      SourcePortRange{LowerPort: 0},
+						DestinationPortRange: DestinationPortRange{LowerPort: 0},
+					},
+				},
+			},
+			RuleId: defaultRuleId,
+		},
+	}
+	xmlString, err := getAclRuleConfigXml(rulesList)
+	if err != nil {
+		return err
+	}
+
 	_, err = session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
 		return err
@@ -972,8 +984,11 @@ var netconfSession *netconf.Session
 func NetConfConnector() *netconf.Session {
 	var err error
 	var ok bool
-	//defaultLog := stdLog.New(os.Stderr, "netconf ", 1)
-	//netconf.SetLog(netconf.NewStdLog(defaultLog, netconf.LogDebug))
+
+	if _, ok = os.LookupEnv("DEBUG"); ok {
+		defaultLog := stdLog.New(os.Stderr, "netconf ", 1)
+		netconf.SetLog(netconf.NewStdLog(defaultLog, netconf.LogDebug))
+	}
 
 	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
 		nc.netconfUser = "dnroot"

@@ -8,8 +8,8 @@ import (
 // Reply
 type Data struct {
 	XMLName                         xml.Name           `xml:"data,omitempty" json:"data,omitempty"`
-	AttrXmlnsdn_access_control_list string             `xml:"xmlns dn-access-control-list,attr"  json:",omitempty"`
-	AttrXmlnsdn_top                 string             `xml:"xmlns dn-top,attr"  json:",omitempty"`
+	AttrXmlnsdn_access_control_list string             `xml:"xmlns dn-access-control-list,attr" json:",omitempty"`
+	AttrXmlnsdn_top                 string             `xml:"xmlns dn-top,attr" json:",omitempty"`
 	DrivenetsTopReply               *DrivenetsTopReply `xml:"http://drivenets.com/ns/yang/dn-top drivenets-top,omitempty" json:"drivenets-top,omitempty"`
 }
 
@@ -84,7 +84,7 @@ type Ipv4 struct {
 
 type AccessList struct {
 	XMLName     xml.Name    `xml:"access-list,omitempty" json:"access-list,omitempty"`
-	ConfigItems ConfigItems `xml:"config-items,omitempty" json:"config-items,omitempty"`
+	ConfigItems *ConfigItems `xml:"config-items,omitempty" json:"config-items,omitempty"`
 	Name        string      `xml:"name,omitempty" json:"name,omitempty"`
 	Rules       Rules       `xml:"rules,omitempty" json:"rules,omitempty"`
 }
@@ -97,33 +97,40 @@ type ConfigItems struct {
 type Rules struct {
 	XMLName xml.Name `xml:"rules,omitempty" json:"rules,omitempty"`
 	Rule    []Rule   `xml:"rule,omitempty" json:"rule,omitempty"`
+	AttrXmlnsnc          string           `xml:"xmlns nc,attr,omitempty" json:",omitempty"`
+	AttrNcSpaceoperation string           `xml:"urn:ietf:params:xml:ns:netconf:base:1.0 operation,attr,omitempty" json:",omitempty"`
+}
+
+// Delete rule by ID
+type DeleteRule struct {
+	XMLName              xml.Name `xml:"rule,omitempty" json:"rule,omitempty"`
+	AttrXmlnsnc          string   `xml:"xmlns nc,attr,omitempty" json:",omitempty"`
+	AttrNcSpaceoperation string   `xml:"urn:ietf:params:xml:ns:netconf:base:1.0 operation,attr,omitempty" json:",omitempty"`
+	RuleId               int      `xml:"rule-id,omitempty" json:"rule-id,omitempty"`
 }
 
 // Access list rule
 type Rule struct {
-	XMLName         xml.Name        `xml:"rule,omitempty" json:"rule,omitempty"`
-	RuleConfigItems RuleConfigItems `xml:"config-items,omitempty" json:"config-items,omitempty"`
-	RuleId          int             `xml:"rule-id,omitempty" json:"rule-id,omitempty"`
+	XMLName              xml.Name         `xml:"rule,omitempty" json:"rule,omitempty"`
+	RuleConfigItems      *RuleConfigItems `xml:"config-items,omitempty" json:"config-items,omitempty"`
+	AttrXmlnsnc          string           `xml:"xmlns nc,attr,omitempty" json:",omitempty"`
+	AttrNcSpaceoperation string           `xml:"urn:ietf:params:xml:ns:netconf:base:1.0 operation,attr,omitempty" json:",omitempty"`
+	RuleId               int              `xml:"rule-id,omitempty" json:"rule-id,omitempty"`
 }
 
 type RuleConfigItems struct {
 	XMLName     xml.Name    `xml:"config-items,omitempty" json:"config-items,omitempty"`
-	Ipv4Matches Ipv4Matches `xml:"ipv4-matches,omitempty" json:"ipv4-matches,omitempty"`
-	Matches     Matches     `xml:"matches,omitempty" json:"matches,omitempty"`
-	Nexthops    Nexthops    `xml:"nexthops,omitempty" json:"nexthops,omitempty"`
+	Ipv4Matches *Ipv4Matches `xml:"ipv4-matches,omitempty" json:"ipv4-matches,omitempty"`
+	Matches     *Matches     `xml:"matches,omitempty" json:"matches,omitempty"`
+	Nexthop1    *net.IP      `xml:"nexthops>nexthop1,omitempty" json:"nexthops,omitempty"`
 	Protocol    string      `xml:"protocol,omitempty" json:"protocol,omitempty"`
 	RuleType    string      `xml:"rule-type,omitempty" json:"rule-type,omitempty"`
 }
 
 type Ipv4Matches struct {
-	XMLName      xml.Name     `xml:"ipv4-matches,omitempty" json:"ipv4-matches,omitempty"`
-	Ipv4AclMatch Ipv4AclMatch `xml:"ipv4-acl-match,omitempty" json:"ipv4-acl-match,omitempty"`
-}
-
-type Ipv4AclMatch struct {
-	XMLName         xml.Name `xml:"ipv4-acl-match,omitempty" json:"ipv4-acl-match,omitempty"`
-	DestinationIpv4 string   `xml:"destination-ipv4" json:"destination-ipv4,omitempty"`
-	SourceIpv4      string   `xml:"source-ipv4" json:"source-ipv4,omitempty"`
+	XMLName         xml.Name `xml:"ipv4-matches,omitempty" json:"ipv4-matches,omitempty"`
+	DestinationIpv4 string   `xml:"ipv4-acl-match>destination-ipv4,omitempty" json:",omitempty"`
+	SourceIpv4      string   `xml:"ipv4-acl-match>source-ipv4,omitempty" json:",omitempty"`
 }
 
 type Matches struct {
@@ -145,14 +152,4 @@ type DestinationPortRange struct {
 type SourcePortRange struct {
 	XMLName   xml.Name `xml:"source-port-range,omitempty" json:"source-port-range,omitempty"`
 	LowerPort uint16   `xml:"lower-port,omitempty" json:"lower-port,omitempty"`
-}
-
-type Nexthops struct {
-	XMLName  xml.Name `xml:"nexthops,omitempty" json:"nexthops,omitempty"`
-	Nexthop1 Nexthop1 `xml:"nexthop1,omitempty" json:"nexthop1,omitempty"`
-}
-
-type Nexthop1 struct {
-	XMLName xml.Name `xml:"nexthop1,omitempty" json:"nexthop1,omitempty"`
-	Addr net.IP `xml:",chardata" json:",omitempty"`
 }
