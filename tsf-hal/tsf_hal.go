@@ -145,21 +145,12 @@ func (hal *DnHalImpl) InitNetConf() {
 	log.Info("Initializing netconf client")
 	session := NetConfConnector()
 
-	obj := GetConfig{
-		Filter: &Filter{
-			DrivenetsTop: &DrivenetsTop{
-				AttrXmlnsdnAccessControlList: "http://drivenets.com/ns/yang/dn-access-control-list",
-				AccessListsDnAccessControlList: AccessListsDnAccessControlList{
-					Ipv4: &Ipv4{
-						AccessList: AccessList{Name: HALO_ACL_BUCKET_NAME},
-					},
-				},
-			},
-		},
-		Source: &Source{RunningConfig: &RunningConfig{}},
+	xmlString, err := getAclRuleFilterXml()
+	if err != nil {
+		log.Errorf("Failed to prepare an XML struct, err: %v", err)
+		panic(err)
 	}
 
-	xmlString, _ := xml.MarshalIndent(obj, "", "    ")
 	data, err := session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
 		log.Errorf("Failed to retrieve ACL rules, err: %v", err)
@@ -759,6 +750,24 @@ func commitChanges() error {
 	return nil
 }
 
+func getAclRuleFilterXml() ([]byte, error) {
+	conf := GetConfig{
+		Filter: &Filter{
+			DrivenetsTop: &DrivenetsTop{
+				AttrXmlnsdnAccessControlList: "http://drivenets.com/ns/yang/dn-access-control-list",
+				AccessListsDnAccessControlList: AccessListsDnAccessControlList{
+					Ipv4: &Ipv4{
+						AccessList: AccessList{Name: HALO_ACL_BUCKET_NAME},
+					},
+				},
+			},
+		},
+		Source: &Source{RunningConfig: &RunningConfig{}},
+	}
+
+	return xml.MarshalIndent(conf, "", "    ")
+}
+
 func getAclRuleConfigXml(rules []Rule) ([]byte, error) {
 	conf := EditConfig{
 		Config: Config{
@@ -927,6 +936,50 @@ func (hal *DnHalImpl) RemoveSteer(rules []*FlowKey) error {
 	}
 
 	return nil
+}
+
+func (h *DnHalImpl) GetSteerInterface(fk FlowKey) string {
+	log.Info("Retrieving ACL Steering rules")
+	session := NetConfConnector()
+
+	xmlString, err := getAclRuleFilterXml()
+	if err != nil {
+		log.Errorf("Failed to prepare an XML struct, err: %v", err)
+		panic(err)
+	}
+
+	data, err := session.Exec(netconf.RawMethod(xmlString))
+	if err != nil {
+		log.Errorf("Failed to retrieve ACL rules, err: %v", err)
+		panic(err)
+	}
+
+	var response Data
+	if err := xml.Unmarshal([]byte(data.Data), &response); err != nil {
+		panic(err)
+	}
+
+	protocols := map[string]FlowProto{"tcp(0x06)": TCP, "udp(0x11)": UDP}
+	for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
+		SrcIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.SourceIpv4)
+		dstIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.DestinationIpv4)
+
+		if protocols[v.RuleConfigItems.Protocol] == fk.Protocol &&
+			v.RuleConfigItems.Matches.L4AclMatch.SourcePortRange.LowerPort == fk.SrcPort &&
+			v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort == fk.DstPort &&
+			SrcIpv4Addr.Equal(fk.SrcAddr) && dstIpv4Addr.Equal(fk.DstAddr) {
+
+			for _, iface := range h.interfaces.Map.NextHop2Interface {
+				if iface.NextHop.Equal(*v.RuleConfigItems.Nexthop1) {
+					return iface.Upper
+				}
+			}
+
+		}
+	}
+
+	log.Infof("can not find rule %v on device", fk)
+	return ""
 }
 
 func SteeringAclCleanup() error {
