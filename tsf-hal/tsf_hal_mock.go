@@ -37,9 +37,9 @@ func (*DnHalMockImpl) RemoveSteer(fk []*FlowKey) error {
 	return nil
 }
 
-func (*DnHalMockImpl) GetSteerInterface(fk FlowKey) string {
-	fmt.Printf("get details of : %v\n", fk)
-	return ""
+func (*DnHalMockImpl) GetSteerInterface(rules []SteerItem) []string {
+	fmt.Printf("get details of : %v\n", rules)
+	return []string{""}
 }
 
 

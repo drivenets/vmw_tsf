@@ -938,10 +938,10 @@ func (hal *DnHalImpl) RemoveSteer(rules []*FlowKey) error {
 	return nil
 }
 
-func (h *DnHalImpl) GetSteerInterface(fk FlowKey) string {
-	log.Info("Retrieving ACL Steering rules")
+func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) []string {
 	session := NetConfConnector()
-
+	ruleNxs := make([]string, 0, len(rules))
+	log.Info("Retrieving ACL Steering rules")
 	xmlString, err := getAclRuleFilterXml()
 	if err != nil {
 		log.Errorf("Failed to prepare an XML struct, err: %v", err)
@@ -960,26 +960,33 @@ func (h *DnHalImpl) GetSteerInterface(fk FlowKey) string {
 	}
 
 	protocols := map[string]FlowProto{"tcp(0x06)": TCP, "udp(0x11)": UDP}
-	for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
-		SrcIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.SourceIpv4)
-		dstIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.DestinationIpv4)
+	for _, rule := range rules {
+		fk := rule.Rule
+		ruleNx := ""
 
-		if protocols[v.RuleConfigItems.Protocol] == fk.Protocol &&
-			v.RuleConfigItems.Matches.L4AclMatch.SourcePortRange.LowerPort == fk.SrcPort &&
-			v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort == fk.DstPort &&
-			SrcIpv4Addr.Equal(fk.SrcAddr) && dstIpv4Addr.Equal(fk.DstAddr) {
+		for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
+			SrcIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.SourceIpv4)
+			dstIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.DestinationIpv4)
 
-			for _, iface := range h.interfaces.Map.NextHop2Interface {
-				if iface.NextHop.Equal(*v.RuleConfigItems.Nexthop1) {
-					return iface.Upper
+			if protocols[v.RuleConfigItems.Protocol] == fk.Protocol &&
+				v.RuleConfigItems.Matches.L4AclMatch.SourcePortRange.LowerPort == fk.SrcPort &&
+				v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort == fk.DstPort &&
+				SrcIpv4Addr.Equal(fk.SrcAddr) && dstIpv4Addr.Equal(fk.DstAddr) {
+
+				for _, iface := range h.interfaces.Map.NextHop2Interface {
+					if iface.NextHop.Equal(*v.RuleConfigItems.Nexthop1) {
+						ruleNx = iface.Upper
+					}
 				}
 			}
-
 		}
+		if ruleNx == "" {
+			log.Infof("can not find rule %v on device", fk)
+		}
+		ruleNxs = append(ruleNxs, ruleNx)
 	}
 
-	log.Infof("can not find rule %v on device", fk)
-	return ""
+	return ruleNxs
 }
 
 func SteeringAclCleanup() error {
