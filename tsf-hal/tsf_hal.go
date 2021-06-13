@@ -836,7 +836,7 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 			accessListID += 10
 		}
 
-		log.Infof("steer", fk, "to", nh, "rule-id", currentRuleId)
+		log.Infof("steer %v to %s, rule-id: %d", fk, nh, currentRuleId)
 		ruleIdxMap[currentRuleId] = ruleAsKey
 		rulesList = append(rulesList, Rule{
 			RuleId: currentRuleId,
