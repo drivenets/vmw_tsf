@@ -69,12 +69,12 @@ func handleSteer(h hal.DnHal) {
 		panic("unexpected flow protocol")
 	}
 
-	fmt.Println("steer", fk, "to", steerNextHopOpt, "rule-id", aclRuleId)
-	hal.SetAclRuleIndex(aclRuleId)
+	//fmt.Println("steer", fk, "to", steerNextHopOpt, "rule-id", aclRuleId)
+	//hal.SetAclRuleIndex(aclRuleId)
 	if steerNextHopOpt == "" {
 		impl, _ := h.(*hal.DnHalImpl)
 		impl.AclRuleCacheAdd(fk, aclRuleId)
-		err = h.RemoveSteer(fk)
+		err = h.RemoveSteer([]*hal.FlowKey{fk})
 	} else {
 		err = h.Steer([]hal.SteerItem{{Rule: fk, NextHop: steerNextHopOpt}})
 	}
@@ -96,15 +96,8 @@ func handleSteer(h hal.DnHal) {
 	//if err != nil {
 	//	panic(err)
 	//}
-
-	//var aclDel = []*hal.FlowKey{fk1, fk2, fk3, fk4}
-	//err = h.RemoveSteerBulk(aclDel)
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	//fmt.Println("delete steer", fk, "to", steerNextHopOpt, "rule-id")
-	//err = h.RemoveSteer(fk, steerNextHopOpt)
+	//
+	//err = h.RemoveSteer([]*hal.FlowKey{fk1, fk2, fk3, fk})
 	//if err != nil {
 	//	panic(err)
 	//}
