@@ -38,7 +38,7 @@ func handleSteer(h hal.DnHal) {
 	var err error
 	var port uint64
 
-	fk := &hal.FlowKey{}
+	fk := hal.FlowKey{}
 
 	tokens := strings.Split(steerFromOpt, ":")
 	if len(tokens) != 2 {
@@ -72,32 +72,33 @@ func handleSteer(h hal.DnHal) {
 	//fmt.Println("steer", fk, "to", steerNextHopOpt, "rule-id", aclRuleId)
 	//hal.SetAclRuleIndex(aclRuleId)
 	if steerNextHopOpt == "" {
-		impl, _ := h.(*hal.DnHalImpl)
-		impl.AclRuleCacheAdd(fk, aclRuleId)
-		err = h.RemoveSteer([]*hal.FlowKey{fk})
+		err = h.RemoveSteer([]hal.FlowKey{fk})
 	} else {
-		err = h.Steer([]hal.SteerItem{{Rule: fk, NextHop: steerNextHopOpt}})
+		err = h.Steer([]hal.SteerItem{{Rule: &fk, NextHop: steerNextHopOpt}})
 	}
 	if err != nil {
 		panic(err)
 	}
 
-	//fk1 := &hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("1.4.4.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
-	//fk2 := &hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("2.4.5.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
-	//fk3 := &hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("3.4.6.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
-	//fk4 := &hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("4.4.7.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
+	//fk1 := hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("1.4.4.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
+	//fk2 := hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("2.4.5.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
+	//fk3 := hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("3.4.6.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
+	//fk4 := hal.FlowKey{Protocol: hal.TCP, SrcAddr: net.ParseIP("4.4.7.8"), SrcPort: 81, DstAddr: net.ParseIP("4.4.4.9"), DstPort: 91}
 	//
 	//var acl = []hal.SteerItem{
-	//	{Rule: fk1, NextHop: steerNextHopOpt},
-	//	{Rule: fk2, NextHop: steerNextHopOpt},
-	//	{Rule: fk3, NextHop: steerNextHopOpt},
-	//	{Rule: fk4, NextHop: steerNextHopOpt}}
+	//	{Rule: &fk1, NextHop: steerNextHopOpt},
+	//	{Rule: &fk2, NextHop: steerNextHopOpt},
+	//	{Rule: &fk3, NextHop: steerNextHopOpt},
+	//	{Rule: &fk4, NextHop: steerNextHopOpt}}
 	//err = h.Steer(acl)
 	//if err != nil {
 	//	panic(err)
 	//}
 	//
-	//err = h.RemoveSteer([]*hal.FlowKey{fk1, fk2, fk3, fk})
+	//ret := h.GetSteerInterface(acl)
+	//fmt.Println(ret)
+	//
+	//err = h.RemoveSteer([]hal.FlowKey{fk1, fk2, fk3, fk})
 	//if err != nil {
 	//	panic(err)
 	//}
