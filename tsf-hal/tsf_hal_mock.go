@@ -32,7 +32,7 @@ func (*DnHalMockImpl) Steer(rules []SteerItem) error {
 	return nil
 }
 
-func (*DnHalMockImpl) RemoveSteer(fk []*FlowKey) error {
+func (*DnHalMockImpl) RemoveSteer(fk []FlowKey) error {
 	fmt.Printf("delete steer flow: %s\n", fk)
 	return nil
 }

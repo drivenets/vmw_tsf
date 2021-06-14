@@ -185,7 +185,7 @@ func (hal *DnHalImpl) InitNetConf() {
 			DstPort:  v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort,
 		}
 		log.Infof("Loading rule to cache - id: %d, rule: %s, next-hop: %v", v.RuleId, fk.AsKey(), v.RuleConfigItems.Nexthop1)
-		hal.AclRuleCacheAdd(&fk, v.RuleId)
+		hal.AclRuleCacheAdd(fk, v.RuleId)
 		if v.RuleId > maxID {
 			accessListID = v.RuleId + 10
 		}
@@ -889,7 +889,7 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 	return nil
 }
 
-func (hal *DnHalImpl) RemoveSteer(rules []*FlowKey) error {
+func (hal *DnHalImpl) RemoveSteer(rules []FlowKey) error {
 	session := NetConfConnector()
 	rulesToRemove := make([]Rule, 0, len(rules))
 	for _, rule := range rules {
@@ -1075,6 +1075,6 @@ func NetConfConnector() *netconf.Session {
 	return netconfSession
 }
 
-func (h *DnHalImpl) AclRuleCacheAdd(fk *FlowKey, idx int) {
+func (h *DnHalImpl) AclRuleCacheAdd(fk FlowKey, idx int) {
 	h.aclRules[idx] = fk.AsKey()
 }
