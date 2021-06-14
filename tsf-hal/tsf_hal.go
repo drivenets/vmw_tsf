@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	stdLog "log"
+	"net"
+	"sort"
+	"strings"
+
 	"github.com/Juniper/go-netconf/netconf"
 	"github.com/openconfig/gnmi/proto/gnmi"
 	"github.com/openconfig/ygot/ygot"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
-	stdLog "log"
-	"net"
-	"sort"
-	"strings"
 
 	"os"
 	"strconv"
@@ -211,7 +212,7 @@ func (hal *DnHalImpl) Init() {
 	if hal.initOptions.flushSteer {
 		err := SteeringAclCleanup()
 		if err != nil {
-			log.Fatalf("failed to cleanup old access lists. Reason: %v", err)
+			//log.Fatalf("failed to cleanup old access lists. Reason: %v", err)
 		}
 	}
 	go monitorInterfaces()
