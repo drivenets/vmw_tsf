@@ -939,9 +939,10 @@ func (hal *DnHalImpl) RemoveSteer(rules []FlowKey) error {
 	return nil
 }
 
-func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) []string {
+func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) (bool, []string) {
 	session := NetConfConnector()
 	ruleNxs := make([]string, 0, len(rules))
+	matchSum := 0
 	log.Info("Retrieving ACL Steering rules")
 	xmlString, err := getAclRuleFilterXml()
 	if err != nil {
@@ -974,9 +975,18 @@ func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) []string {
 				v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort == fk.DstPort &&
 				SrcIpv4Addr.Equal(fk.SrcAddr) && dstIpv4Addr.Equal(fk.DstAddr) {
 
+				// If no nexthop was configured
+				if v.RuleConfigItems.Nexthop1 == nil && rule.NextHop == "" {
+					matchSum += 1
+					continue
+				}
+
 				for _, iface := range h.interfaces.Map.NextHop2Interface {
-					if iface.NextHop.Equal(*v.RuleConfigItems.Nexthop1) {
+					if v.RuleConfigItems.Nexthop1 != nil && iface.NextHop.Equal(*v.RuleConfigItems.Nexthop1) {
 						ruleNx = iface.Upper
+						if ruleNx == rule.NextHop {
+							matchSum += 1
+						}
 					}
 				}
 			}
@@ -987,7 +997,8 @@ func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) []string {
 		ruleNxs = append(ruleNxs, ruleNx)
 	}
 
-	return ruleNxs
+	status := matchSum == len(rules)
+	return status, ruleNxs
 }
 
 func SteeringAclCleanup() error {
