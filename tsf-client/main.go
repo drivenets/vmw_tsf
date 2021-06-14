@@ -69,12 +69,15 @@ func handleSteer(h hal.DnHal) {
 		panic("unexpected flow protocol")
 	}
 
-	//fmt.Println("steer", fk, "to", steerNextHopOpt, "rule-id", aclRuleId)
 	//hal.SetAclRuleIndex(aclRuleId)
 	if steerNextHopOpt == "" {
 		err = h.RemoveSteer([]hal.FlowKey{fk})
 	} else {
-		err = h.Steer([]hal.SteerItem{{Rule: &fk, NextHop: steerNextHopOpt}})
+		fmt.Println("steer", fk, "to", steerNextHopOpt)
+		steerItem := hal.SteerItem{Rule: &fk, NextHop: steerNextHopOpt}
+		err = h.Steer([]hal.SteerItem{steerItem})
+		fmt.Println("verifying rule ", fk, "to", steerNextHopOpt, "has been applied")
+		fmt.Println(h.GetSteerInterface([]hal.SteerItem{steerItem}))
 	}
 	if err != nil {
 		panic(err)
@@ -88,20 +91,21 @@ func handleSteer(h hal.DnHal) {
 	//var acl = []hal.SteerItem{
 	//	{Rule: &fk1, NextHop: steerNextHopOpt},
 	//	{Rule: &fk2, NextHop: steerNextHopOpt},
-	//	{Rule: &fk3, NextHop: steerNextHopOpt},
+	//	{Rule: &fk3, NextHop: ""},
 	//	{Rule: &fk4, NextHop: steerNextHopOpt}}
 	//err = h.Steer(acl)
 	//if err != nil {
 	//	panic(err)
 	//}
 	//
-	//ret := h.GetSteerInterface(acl)
-	//fmt.Println(ret)
+	//fmt.Println(h.GetSteerInterface(acl))
 	//
 	//err = h.RemoveSteer([]hal.FlowKey{fk1, fk2, fk3, fk})
 	//if err != nil {
 	//	panic(err)
 	//}
+	//
+	//fmt.Println(h.GetSteerInterface(acl))
 }
 
 func clearScreen() {
