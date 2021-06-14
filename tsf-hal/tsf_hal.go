@@ -366,7 +366,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 	if sample, ok = os.LookupEnv("IFC_SAMPLE"); ok {
 		var err error
 		if interval, err = strconv.ParseUint(sample, 10, 64); err != nil {
-			log.Fatalf("Failed to parse interface sampling interval: %s", interval)
+			log.Fatalf("Failed to parse interface sampling interval: %v", interval)
 		}
 	}
 	hal.interfaces.UpdateInterval = time.Duration(interval) * time.Second
@@ -437,7 +437,7 @@ func getDnIfIndex(client gnmi.GNMIClient, lower string) (uint32, error) {
 	val := updates[0].GetVal()
 	var ifIndex uint32
 	if err := json.Unmarshal(val.GetJsonVal(), &ifIndex); err != nil {
-		log.Fatalf("failed to convert value: %q. Reason: %w", val, err)
+		log.Fatalf("failed to convert value: %q. Reason: %v", val, err)
 	}
 	return ifIndex, nil
 }
