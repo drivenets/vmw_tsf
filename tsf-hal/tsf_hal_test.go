@@ -8,16 +8,21 @@ import (
 
 func TestSteer(t *testing.T) {
 	hal := NewDnHalMock()
-	flow := FlowKey{
-		Protocol: TCP,
-		SrcAddr:  net.ParseIP("10.10.0.1"),
-		DstAddr:  net.ParseIP("10.11.0.1"),
-		SrcPort:  2038,
-		DstPort:  443,
+	si := []SteerItem{
+		{
+			Rule: &FlowKey{
+				Protocol: TCP,
+				SrcAddr:  net.ParseIP("10.10.0.1"),
+				DstAddr:  net.ParseIP("10.11.0.1"),
+				SrcPort:  2038,
+				DstPort:  443,
+			},
+			NextHop: "halo2",
+		},
 	}
-	err := hal.Steer(&flow, "halo2")
+	err := hal.Steer(si)
 	if err != nil {
-		t.Errorf("Failed to steer flow: flow=%q, reason=%q", flow, err)
+		t.Errorf("Failed to steer: items=%q, reason=%q", si, err)
 	}
 }
 
