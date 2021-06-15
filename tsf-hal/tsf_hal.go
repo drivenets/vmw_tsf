@@ -1042,8 +1042,7 @@ func SteeringAclCleanup() error {
 		return err
 	}
 
-	log.Printf("Committing changes")
-	_, err = session.Exec(netconf.RawMethod(Commit))
+	err = commitChanges()
 	if err != nil {
 		return err
 	}
