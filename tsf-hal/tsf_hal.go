@@ -121,7 +121,7 @@ func NewDnHal(options ...OptionHal) DnHal {
 	for _, op := range options {
 		err := op(hal)
 		if err != nil {
-			log.Fatalf("Failed to setup HAL instance. Reason: ", err)
+			log.Fatalf("Failed to setup HAL instance. Reason: %v", err)
 		}
 	}
 
@@ -212,7 +212,7 @@ func (hal *DnHalImpl) Init() {
 	if hal.initOptions.flushSteer {
 		err := SteeringAclCleanup()
 		if err != nil {
-			//log.Fatalf("failed to cleanup old access lists. Reason: %v", err)
+			log.Errorf("Failed to cleanup old access lists. Reason: %v", err)
 		}
 	}
 	go monitorInterfaces()
