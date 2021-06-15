@@ -104,6 +104,7 @@ type DnHalImpl struct {
 		aggregate map[string]*FlowAggregate
 	}
 	aclRules map[int]string
+	debug    bool
 }
 
 var hal = &DnHalImpl{}
@@ -197,6 +198,7 @@ func (hal *DnHalImpl) InitNetConf() {
 func (hal *DnHalImpl) Init() {
 	if _, ok := os.LookupEnv("DEBUG"); ok {
 		log.SetLevel(log.DebugLevel)
+		hal.debug = true
 	}
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
@@ -725,8 +727,20 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 	aggregate := make(map[string]*FlowAggregate)
 	// Swap current active with empty one
 	aggregate, hal.flows.aggregate = hal.flows.aggregate, aggregate
-	for _, agg := range aggregate {
-		v(agg.key, agg.ToTelemetry())
+	if hal.debug {
+		dbg := NewFlowsDebugger()
+		for _, agg := range aggregate {
+			stats := agg.ToTelemetry()
+			dbg.Flow(agg.key, stats)
+			v(agg.key, stats)
+		}
+		dbg.Print()
+	} else {
+		for _, agg := range aggregate {
+			stats := agg.ToTelemetry()
+			v(agg.key, stats)
+		}
+
 	}
 	return nil
 }
