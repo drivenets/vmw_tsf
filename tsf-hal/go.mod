@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/Juniper/go-netconf v0.1.1
 	github.com/cloudflare/goflow/v3 v3.4.2
-	github.com/drivenets/vmw_tsf/tsf-twamp v0.0.0-20210615145525-c8eaf98a4a1e
+	github.com/drivenets/vmw_tsf/tsf-twamp v0.0.0-20210616104616-b0ee45a41f1f
 	github.com/openconfig/gnmi v0.0.0-20210527163611-d3a3e30199da
 	github.com/openconfig/ygot v0.10.12
 	github.com/sirupsen/logrus v1.8.1
