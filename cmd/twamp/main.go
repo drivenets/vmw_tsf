@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	twamp "github.com/drivenets/vmw_tsf/tsf-twamp"
+	twamp "github.com/drivenets/vmw_tsf/pkg/twamp"
 )
 
 func main() {

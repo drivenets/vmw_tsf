@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	hal "github.com/drivenets/vmw_tsf/tsf-hal"
+	hal "github.com/drivenets/vmw_tsf/pkg/hal"
 )
 
 var monFlowsOpt bool
