@@ -167,6 +167,9 @@ func (hal *DnHalImpl) InitNetConf() {
 	protocols := map[string]FlowProto{"tcp(0x06)": TCP, "udp(0x11)": UDP}
 	maxID := accessListID
 	for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
+		if v.RuleId == DefaultRuleId {
+			continue
+		}
 		srcIpv4Addr, _, err := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.SourceIpv4)
 		if err != nil {
 			log.Warn(v, err)
@@ -1015,9 +1018,10 @@ func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) (bool, []string) {
 	return status, ruleNxs
 }
 
+const DefaultRuleId = 65434
+
 func SteeringAclCleanup() error {
 	session := NetConfConnector()
-	defaultRuleId := 65434
 
 	log.Info("Removing all Steering rules")
 	cleanRulesXML, err := getAclRulesDeleteXml()
@@ -1043,7 +1047,7 @@ func SteeringAclCleanup() error {
 					},
 				},
 			},
-			RuleId: defaultRuleId,
+			RuleId: DefaultRuleId,
 		},
 	}
 	xmlString, err := getAclRuleConfigXml(rulesList)
