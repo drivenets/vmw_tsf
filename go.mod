@@ -6,7 +6,6 @@ require (
 	github.com/Juniper/go-netconf v0.1.1
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.1.1 // indirect
-	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/cloudflare/goflow/v3 v3.4.2
 	github.com/openconfig/gnmi v0.0.0-20210527163611-d3a3e30199da
 	github.com/openconfig/ygot v0.10.15
@@ -15,5 +14,4 @@ require (
 	golang.org/x/crypto v0.0.0-20210513164829-c07d793c2f9a
 	golang.org/x/net v0.0.0-20210614182718-04defd469f4e
 	google.golang.org/grpc v1.38.0
-	google.golang.org/protobuf v1.26.0 // indirect
 )
