@@ -26,7 +26,7 @@ import (
 
 	flowmessage "github.com/cloudflare/goflow/v3/pb"
 
-	twamp "github.com/drivenets/vmw_tsf/tsf-twamp"
+	twamp "github.com/drivenets/vmw_tsf/pkg/twamp"
 )
 
 type FlowAggregate struct {
