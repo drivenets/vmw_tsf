@@ -78,10 +78,10 @@ func handleSteer(h hal.DnHal) {
 	if steerNextHopOpt == "" {
 		err = h.RemoveSteer([]hal.FlowKey{fk})
 	} else {
-		log.Info("steer", fk, "to", steerNextHopOpt)
+		log.Infof("steer %v to %s", fk, steerNextHopOpt)
 		steerItem := hal.SteerItem{Rule: &fk, NextHop: steerNextHopOpt}
 		err = h.Steer([]hal.SteerItem{steerItem})
-		log.Info("verifying rule ", fk, "to", steerNextHopOpt, "has been applied")
+		log.Infof("verifying rule %v to %s has been applied", fk, steerNextHopOpt)
 		log.Infoln(h.GetSteerInterface([]hal.SteerItem{steerItem}))
 	}
 	if err != nil {
