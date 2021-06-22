@@ -957,10 +957,8 @@ func (hal *DnHalImpl) RemoveSteer(rules []FlowKey) error {
 }
 
 func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) (bool, []string) {
-	session := NetConfConnector()
-	ruleNxs := make([]string, 0, len(rules))
-	matchSum := 0
 	log.Info("Retrieving ACL Steering rules")
+	session := NetConfConnector()
 	xmlString, err := getAclRuleFilterXml()
 	if err != nil {
 		log.Errorf("Failed to prepare an XML struct, err: %v", err)
@@ -979,39 +977,41 @@ func (h *DnHalImpl) GetSteerInterface(rules []SteerItem) (bool, []string) {
 	}
 
 	protocols := map[string]FlowProto{"tcp(0x06)": TCP, "udp(0x11)": UDP}
-	for _, rule := range rules {
-		fk := rule.Rule
-		ruleNx := ""
+	responseMap := make(map[string]string)
+	for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
+		srcIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.SourceIpv4)
+		dstIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.DestinationIpv4)
+		tmpItem := FlowKey{
+			Protocol: protocols[v.RuleConfigItems.Protocol],
+			SrcAddr:  srcIpv4Addr,
+			DstAddr:  dstIpv4Addr,
+			SrcPort:  v.RuleConfigItems.Matches.L4AclMatch.SourcePortRange.LowerPort,
+			DstPort:  v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort,
+		}
 
-		for _, v := range response.DrivenetsTopReply.AccessListsDnAccessControlListReply.Ipv4.AccessList.Rules.Rule {
-			SrcIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.SourceIpv4)
-			dstIpv4Addr, _, _ := net.ParseCIDR(v.RuleConfigItems.Ipv4Matches.DestinationIpv4)
-
-			if protocols[v.RuleConfigItems.Protocol] == fk.Protocol &&
-				v.RuleConfigItems.Matches.L4AclMatch.SourcePortRange.LowerPort == fk.SrcPort &&
-				v.RuleConfigItems.Matches.L4AclMatch.DestinationPortRange.LowerPort == fk.DstPort &&
-				SrcIpv4Addr.Equal(fk.SrcAddr) && dstIpv4Addr.Equal(fk.DstAddr) {
-
-				// If no nexthop was configured
-				if v.RuleConfigItems.Nexthop1 == nil && rule.NextHop == "" {
-					matchSum += 1
-					continue
-				}
-
-				for _, iface := range h.interfaces.Map.NextHop2Interface {
-					if v.RuleConfigItems.Nexthop1 != nil && iface.NextHop.Equal(*v.RuleConfigItems.Nexthop1) {
-						ruleNx = iface.Upper
-						if ruleNx == rule.NextHop {
-							matchSum += 1
-						}
-					}
+		if v.RuleConfigItems.Nexthop1 == nil {
+			responseMap[tmpItem.AsKey()] = ""
+		} else {
+			for _, nh2iface := range h.interfaces.Map.NextHop2Interface {
+				if nh2iface.NextHop.Equal(*v.RuleConfigItems.Nexthop1) {
+					responseMap[tmpItem.AsKey()] = nh2iface.Upper
 				}
 			}
 		}
-		if ruleNx == "" {
+
+	}
+
+	ruleNxs := make([]string, 0, len(rules))
+	matchSum := 0
+	for _, rule := range rules {
+		fk := rule.Rule
+		if nh, exists := responseMap[fk.AsKey()]; exists && nh == rule.NextHop {
+			matchSum += 1
+			ruleNxs = append(ruleNxs, nh)
+		} else {
 			log.Infof("can not find rule %v on device", fk)
+			ruleNxs = append(ruleNxs, "")
 		}
-		ruleNxs = append(ruleNxs, ruleNx)
 	}
 
 	status := matchSum == len(rules)
