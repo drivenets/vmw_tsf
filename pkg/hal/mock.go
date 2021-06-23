@@ -33,7 +33,7 @@ func (*DnHalMockImpl) Steer(rules []SteerItem) error {
 }
 
 func (*DnHalMockImpl) RemoveSteer(fk []FlowKey) error {
-	fmt.Printf("delete steer flow: %s\n", fk)
+	fmt.Printf("delete steer flow: %v\n", fk)
 	return nil
 }
 
@@ -41,7 +41,6 @@ func (*DnHalMockImpl) GetSteerInterface(rules []SteerItem) (bool, []string) {
 	fmt.Printf("get details of : %v\n", rules)
 	return true, []string{""}
 }
-
 
 var itl = map[string]InterfaceTelemetry{
 	"halo1": {

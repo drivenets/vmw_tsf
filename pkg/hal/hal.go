@@ -839,12 +839,12 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 
 		if nh != "" {
 			ifc := findInterfaceByNextHop(nh)
-			nextHop1 = ifc.NextHop
 			if ifc == nil {
 				err := fmt.Errorf("no interface with next-hop: %s", nh)
 				log.Warn(err)
 				return err
 			}
+			nextHop1 = ifc.NextHop
 		} else {
 			nextHop1 = nil
 		}
@@ -879,7 +879,7 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 					},
 				},
 				Nexthop1: &nextHop1,
-				Protocol: fmt.Sprintf("%s", fk.Protocol),
+				Protocol: fk.Protocol.String(),
 				RuleType: "allow",
 			},
 		})
