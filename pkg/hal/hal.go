@@ -712,6 +712,9 @@ func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
 		if agg, ok = aggregate[key]; ok {
 			agg.bytes += msg.Bytes
 			agg.packets += msg.Packets
+			// Override ingress/egress interfaces
+			agg.inIf = inIf
+			agg.outIf = outIf
 		} else {
 			agg = &FlowAggregate{
 				start:   time.Now(),
