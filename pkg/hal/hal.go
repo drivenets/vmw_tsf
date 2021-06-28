@@ -368,7 +368,7 @@ func (hal *DnHalImpl) InitInterfaces() {
 	}
 
 	var sample string
-	var interval uint64 = DRIVENETS_INTERFACE_SAMPLE_INTERVAL
+	var interval uint64 = 1
 	if sample, ok = os.LookupEnv("IFC_SAMPLE"); ok {
 		var err error
 		if interval, err = strconv.ParseUint(sample, 10, 64); err != nil {
@@ -532,7 +532,7 @@ func updateInterfaceDelayJitter(upper string, delay float64, jitter float64) {
 	}
 }
 
-const DRIVENETS_GNMI_UPDATE_LIMIT = 5
+const DRIVENETS_GNMI_UPDATE_LIMIT = 1
 
 func monitorInterfaces() {
 	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
@@ -541,14 +541,7 @@ func monitorInterfaces() {
 	}
 	defer conn.Close()
 
-	interval := time.Duration(DRIVENETS_GNMI_UPDATE_LIMIT) * time.Second
-	if hal.interfaces.UpdateInterval < interval {
-		log.Warnf("gNMI can not update faster than %[1]d seconds. Update interface statistics every %[1]d seconds.",
-			DRIVENETS_GNMI_UPDATE_LIMIT)
-	} else {
-		interval = hal.interfaces.UpdateInterval
-	}
-	im, err := NewInterfaceMonitor(hal.grpcAddr, interval)
+	im, err := NewInterfaceMonitor(hal.grpcAddr, hal.interfaces.UpdateInterval)
 	if err != nil {
 		log.Fatalf("Failed to start. Reason: %s", err)
 	}
