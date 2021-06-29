@@ -168,25 +168,25 @@ func MakeNodeAWidget(h *HostStats, r ScreenRect) ui.Drawable {
 	lrx.Title = "local_rx"
 	lrx.Data = h.ifc["halo_local0"].rx_bps
 	lrx.MaxVal = 200 * 1e6
-	lrx.MaxHeight = 3
+	lrx.MaxHeight = 4
 
 	h1tx := widgets.NewSparkline()
 	h1tx.Title = "halo1_tx"
 	h1tx.Data = h.ifc["halo1"].tx_bps
 	h1tx.MaxVal = 200 * 1e6
-	h1tx.MaxHeight = 3
+	h1tx.MaxHeight = 4
 
 	h0tx := widgets.NewSparkline()
 	h0tx.Title = "halo0_tx"
 	h0tx.Data = h.ifc["halo0"].tx_bps
 	h0tx.MaxVal = 200 * 1e6
-	h0tx.MaxHeight = 3
+	h0tx.MaxHeight = 4
 
 	acl := widgets.NewSparkline()
 	acl.Title = "acl_size"
 	acl.Data = h.acl
 	acl.MaxVal = 100
-	acl.MaxHeight = 3
+	acl.MaxHeight = 4
 
 	w := widgets.NewSparklineGroup(lrx, h1tx, h0tx, acl)
 	w.Title = fmt.Sprintf("Node: %s", h.name)
@@ -201,19 +201,19 @@ func MakeNodeBWidget(h *HostStats, r ScreenRect) ui.Drawable {
 	h1rx.Title = "halo1_rx"
 	h1rx.Data = h.ifc["halo1"].rx_bps
 	h1rx.MaxVal = 200 * 1e6
-	h1rx.MaxHeight = 3
+	h1rx.MaxHeight = 4
 
 	h0tx := widgets.NewSparkline()
 	h0tx.Title = "halo0_tx"
 	h0tx.Data = h.ifc["halo0"].tx_bps
 	h0tx.MaxVal = 200 * 1e6
-	h0tx.MaxHeight = 3
+	h0tx.MaxHeight = 4
 
 	acl := widgets.NewSparkline()
 	acl.Title = "acl_size"
 	acl.Data = h.acl
 	acl.MaxVal = 100
-	acl.MaxHeight = 3
+	acl.MaxHeight = 4
 
 	w := widgets.NewSparklineGroup(h1rx, h0tx, acl)
 	w.Title = fmt.Sprintf("Node: %s", h.name)
@@ -228,25 +228,25 @@ func MakeNodeCWidget(h *HostStats, r ScreenRect) ui.Drawable {
 	h0rx.Title = "halo0_rx"
 	h0rx.Data = h.ifc["halo0"].rx_bps
 	h0rx.MaxVal = 200 * 1e6
-	h0rx.MaxHeight = 3
+	h0rx.MaxHeight = 4
 
 	h1rx := widgets.NewSparkline()
 	h1rx.Title = "halo1_rx"
 	h1rx.Data = h.ifc["halo1"].rx_bps
 	h1rx.MaxVal = 200 * 1e6
-	h1rx.MaxHeight = 3
+	h1rx.MaxHeight = 4
 
 	ltx := widgets.NewSparkline()
 	ltx.Title = "local_tx"
 	ltx.Data = h.ifc["halo_local0"].tx_bps
 	ltx.MaxVal = 200 * 1e6
-	ltx.MaxHeight = 3
+	ltx.MaxHeight = 4
 
 	acl := widgets.NewSparkline()
 	acl.Title = "acl_size"
 	acl.Data = h.acl
 	acl.MaxVal = 100
-	acl.MaxHeight = 3
+	acl.MaxHeight = 4
 
 	w := widgets.NewSparklineGroup(h0rx, h1rx, ltx, acl)
 	w.Title = fmt.Sprintf("Node: %s", h.name)
