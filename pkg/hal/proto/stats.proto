@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option go_package = "github.com/drivenets/vmw_tsf/pkg/stats/proto";
+
+package stats;
+
+service Stats {
+	rpc GetInterfaces(Empty) returns (stream Interface) {}
+	rpc GetAclCacheSize(Empty) returns (CacheSize) {}
+}
+
+message Empty {
+}
+
+message Interface {
+	string Name = 1;
+	uint64 Speed = 2;
+	uint64 RxBytes = 3;
+	uint64 RxBps = 4;
+	uint64 TxBytes = 5;
+	uint64 TxBps = 6;
+	double Delay = 7;
+	double Jitter = 8;
+}
+
+message CacheSize{
+	uint64 Size = 1;
+}

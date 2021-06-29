@@ -26,6 +26,7 @@ import (
 
 	flowmessage "github.com/cloudflare/goflow/v3/pb"
 
+	pb "github.com/drivenets/vmw_tsf/pkg/hal/proto"
 	twamp "github.com/drivenets/vmw_tsf/pkg/twamp"
 )
 
@@ -82,7 +83,8 @@ type DnHalImpl struct {
 	mutex       sync.Mutex
 	initialized bool
 	initOptions struct {
-		flushSteer bool
+		flushSteer  bool
+		statsServer bool
 	}
 	grpcAddr   string
 	interfaces struct {
@@ -114,6 +116,13 @@ type OptionHal func(*DnHalImpl) error
 func OptionHalFlushSteer() OptionHal {
 	return func(hal *DnHalImpl) error {
 		hal.initOptions.flushSteer = true
+		return nil
+	}
+}
+
+func OptionHalStatsServer() OptionHal {
+	return func(hal *DnHalImpl) error {
+		hal.initOptions.statsServer = true
 		return nil
 	}
 }
@@ -228,6 +237,10 @@ func (hal *DnHalImpl) Init() {
 	go monitorFlows()
 
 	hal.initialized = true
+
+	if hal.initOptions.statsServer {
+		go statsServer(hal)
+	}
 }
 
 const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 5
@@ -1102,4 +1115,15 @@ func NetConfConnector() *netconf.Session {
 
 func (h *DnHalImpl) AclRuleCacheAdd(fk FlowKey, idx int) {
 	h.aclRules[idx] = fk.AsKey()
+}
+
+func statsServer(hal *DnHalImpl) {
+	lis, err := net.Listen("tcp", "0.0.0.0:7732")
+	if err != nil {
+		log.Warnf("Failed to listen on stats server port. Reason: %v", err)
+		return
+	}
+	grpcServer := grpc.NewServer()
+	pb.RegisterStatsServer(grpcServer, NewStatsServer(hal))
+	grpcServer.Serve(lis)
 }

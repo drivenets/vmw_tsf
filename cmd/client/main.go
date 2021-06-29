@@ -13,7 +13,7 @@ import (
 	"time"
 
 	hal "github.com/drivenets/vmw_tsf/pkg/hal"
-	"github.com/prometheus/common/log"
+	log "github.com/sirupsen/logrus"
 )
 
 var monFlowsOpt bool
@@ -30,6 +30,7 @@ var noTwampOpt bool
 var batchOpt bool
 var countOpt int
 var accOpt bool
+var statsServerOpt bool
 
 func handleSteer(h hal.DnHal) {
 
@@ -472,6 +473,7 @@ func main() {
 	flag.BoolVar(&batchOpt, "batch", false, "batch mode exit after first interval")
 	flag.IntVar(&countOpt, "count", 1, "how many batch rounds to execute")
 	flag.BoolVar(&accOpt, "accumulate", false, "accumulate flow statistics in batch mode")
+	flag.BoolVar(&statsServerOpt, "stats", false, "enable grpc stats server")
 	flag.Parse()
 
 	if noTwampOpt {
@@ -486,6 +488,9 @@ func main() {
 	opts := make([]hal.OptionHal, 0, 1)
 	if flushSteerOpt {
 		opts = append(opts, hal.OptionHalFlushSteer())
+	}
+	if statsServerOpt {
+		opts = append(opts, hal.OptionHalStatsServer())
 	}
 	h := hal.NewDnHal(opts...)
 	handleSteer(h)

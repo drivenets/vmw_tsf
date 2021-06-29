@@ -1,5 +1,5 @@
 .PHONY: all
-all: hal-client halo twamp
+all: hal-client halo twamp hal-stats
 
 .PHONY: hal-client
 hal-client:
@@ -16,3 +16,13 @@ twamp:
 .PHONY: clean
 clean:
 	rm -f bin/*
+
+.PHONY: proto
+proto:
+	cd ./pkg/hal/proto && protoc --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		stats.proto
+
+.PHONY: hal-stats
+hal-stats:
+	go build -o bin/hal-stats cmd/stats/main.go
