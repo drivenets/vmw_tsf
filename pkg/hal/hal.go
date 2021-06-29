@@ -1125,5 +1125,6 @@ func statsServer(hal *DnHalImpl) {
 	}
 	grpcServer := grpc.NewServer()
 	pb.RegisterStatsServer(grpcServer, NewStatsServer(hal))
+	log.Info("Starting gRPC stats server")
 	grpcServer.Serve(lis)
 }
