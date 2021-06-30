@@ -273,9 +273,9 @@ func cleanup(h map[string]*HostStats) {
 func main() {
 
 	h := make(map[string]*HostStats, 3)
-	h["halo-a"] = NewHostStats("halo-a", HostStatsUrl("200.200.200.11"))
-	h["halo-b"] = NewHostStats("halo-b", HostStatsUrl("200.200.200.12"))
-	h["halo-c"] = NewHostStats("halo-c", HostStatsUrl("200.200.202.12"))
+	h["halo-a"] = NewHostStats("halo-a", HostStatsUrl("192.168.50.36"))
+	h["halo-b"] = NewHostStats("halo-b", HostStatsUrl("192.168.50.45"))
+	h["halo-c"] = NewHostStats("halo-c", HostStatsUrl("192.168.50.27"))
 	defer cleanup(h)
 
 	if err := ui.Init(); err != nil {
