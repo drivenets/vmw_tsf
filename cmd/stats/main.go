@@ -120,8 +120,11 @@ func (h *HostStats) Update(ctx context.Context) {
 						}
 						//log.Fatalf("Failed to get interface entry. Reason: %v", err)
 					}
+					if ifc == nil {
+						continue
+					}
 					if stats, ok := s.ifc[ifc.GetName()]; !ok {
-						log.Warnf("Got unknown interface %s", ifc.GetName())
+						//log.Warnf("Got unknown interface %s", ifc.GetName())
 						continue
 					} else {
 						stats.rx_bps = float64(ifc.RxBps)
