@@ -65,7 +65,8 @@ func (h *HostStats) Connect() {
 	if h.conn != nil {
 		return
 	}
-	conn, err := grpc.Dial(h.url, grpc.WithInsecure())
+	ctx, _ := context.WithTimeout(context.Background(), time.Duration(1)*time.Second)
+	conn, err := grpc.DialContext(ctx, h.url, grpc.WithInsecure())
 	if err != nil {
 		log.Errorf("Failed to connect to %s. Reason: %v", h.url, err)
 	}
@@ -106,7 +107,7 @@ func (h *HostStats) Update(ctx context.Context) {
 			h.Connect()
 		}
 		if h.conn != nil {
-			tmo, _ := context.WithTimeout(ctx, time.Duration(99)*time.Second)
+			tmo, _ := context.WithTimeout(ctx, time.Duration(1)*time.Second)
 			stream, err := h.client.GetInterfaces(tmo, &pb.Empty{})
 			if err != nil {
 				//log.Warnf("Failed to get interfaces. Reason: %v", err)
@@ -134,7 +135,7 @@ func (h *HostStats) Update(ctx context.Context) {
 			}
 		}
 		if h.conn != nil {
-			tmo, _ := context.WithTimeout(ctx, time.Duration(99)*time.Second)
+			tmo, _ := context.WithTimeout(ctx, time.Duration(1)*time.Second)
 			acl, err := h.client.GetAclCacheSize(tmo, &pb.Empty{})
 			if err != nil {
 				//log.Warnf("Failed to get acl cache size. Reason: %v", err)
