@@ -243,7 +243,6 @@ func (hal *DnHalImpl) Init() {
 	}
 }
 
-const DRIVENETS_INTERFACE_SAMPLE_INTERVAL = 5
 const HALO_INTERFACES_COUNT = 2
 const HALO_ACL_BUCKET_NAME = "Steering"
 
@@ -544,8 +543,6 @@ func updateInterfaceDelayJitter(upper string, delay float64, jitter float64) {
 		ifc.Stats.Link.Jitter = jitter
 	}
 }
-
-const DRIVENETS_GNMI_UPDATE_LIMIT = 1
 
 func monitorInterfaces() {
 	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
