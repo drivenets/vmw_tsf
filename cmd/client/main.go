@@ -18,7 +18,7 @@ import (
 
 var monFlowsOpt bool
 var monIfcOpt bool
-var monInterval int
+var monInterval float64
 var flushSteerOpt bool
 var steerFromOpt string
 var steerToOpt string
@@ -187,7 +187,7 @@ func monitor(h hal.DnHal) {
 		if monFlowsOpt {
 			printFlows(h)
 		}
-		time.Sleep(time.Duration(monInterval) * time.Second)
+		time.Sleep(time.Duration(monInterval * float64(time.Second)))
 	}
 }
 
@@ -419,7 +419,7 @@ func batch(h hal.DnHal) {
 	start := time.Now()
 	prev := time.Now()
 	for idx := 0; idx < countOpt; idx++ {
-		time.Sleep(time.Duration(monInterval) * time.Second)
+		time.Sleep(time.Duration(monInterval * float64(time.Second)))
 		elapsed := time.Since(start)
 		tick := time.Since(prev)
 		prev = time.Now()
@@ -461,7 +461,7 @@ func batch(h hal.DnHal) {
 func main() {
 	flag.BoolVar(&monFlowsOpt, "flows", false, "monitor flows")
 	flag.BoolVar(&monIfcOpt, "interfaces", false, "monitor interfaces")
-	flag.IntVar(&monInterval, "interval", 10, "monitoring interval")
+	flag.Float64Var(&monInterval, "interval", 1, "monitoring interval")
 	flag.BoolVar(&flushSteerOpt, "flush", false, "flush old steering rules")
 	flag.StringVar(&steerFromOpt, "from", "", "steer flow source ip:port")
 	flag.StringVar(&steerToOpt, "to", "", "steer flow destination ip:port")
@@ -483,7 +483,7 @@ func main() {
 		os.Setenv("SKIP_TWAMP", "1")
 	}
 
-	os.Setenv("IFC_SAMPLE", strconv.Itoa(monInterval))
+	os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
 
 	opts := make([]hal.OptionHal, 0, 1)
 	if flushSteerOpt {

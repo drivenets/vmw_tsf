@@ -380,14 +380,14 @@ func (hal *DnHalImpl) InitInterfaces() {
 	}
 
 	var sample string
-	var interval uint64 = 1
+	var interval float64 = 1
 	if sample, ok = os.LookupEnv("IFC_SAMPLE"); ok {
 		var err error
-		if interval, err = strconv.ParseUint(sample, 10, 64); err != nil {
+		if interval, err = strconv.ParseFloat(sample, 64); err != nil {
 			log.Fatalf("Failed to parse interface sampling interval: %v", interval)
 		}
 	}
-	hal.interfaces.UpdateInterval = time.Duration(interval) * time.Second
+	hal.interfaces.UpdateInterval = time.Duration(interval * float64(time.Second))
 
 	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
 		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
