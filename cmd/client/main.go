@@ -126,8 +126,8 @@ func printInterfaces(h hal.DnHal) {
 	fmt.Println()
 	fmt.Println()
 	w := tabwriter.NewWriter(os.Stdout, 1, 1, 1, ' ', 0)
-	fmt.Fprintln(w, "Interface\tType\tSpeed\tRx.Bytes/sec\tRx.Bytes/total\tTx.Bytes/sec\tTx.Bytes/total\tDelay\tJitter")
-	fmt.Fprintln(w, "---------\t----\t-----\t------------\t--------------\t------------\t--------------\t-----\t------")
+	fmt.Fprintln(w, "Interface\tType\tSpeed\tRx.Bits/sec\tRx.Bytes/total\tTx.Bits/sec\tTx.Bytes/total\tDelay\tJitter")
+	fmt.Fprintln(w, "---------\t----\t-----\t-----------\t--------------\t-----------\t--------------\t-----\t------")
 	count := 0
 	ifType := ""
 	getIfStats := func(ifc string, tm *hal.InterfaceTelemetry) error {
