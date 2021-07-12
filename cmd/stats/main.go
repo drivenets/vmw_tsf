@@ -94,7 +94,7 @@ type HostStatSample struct {
 func NewHostStatSample(h *HostStats) HostStatSample {
 	s := HostStatSample{}
 	s.ifc = make(map[string]*IfcStatSample, len(h.ifc))
-	for name, _ := range h.ifc {
+	for name := range h.ifc {
 		s.ifc[name] = &IfcStatSample{}
 	}
 	return s
