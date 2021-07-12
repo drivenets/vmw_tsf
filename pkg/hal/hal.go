@@ -31,8 +31,6 @@ import (
 )
 
 type FlowAggregate struct {
-	start time.Time
-
 	key   *FlowKey
 	inIf  string
 	outIf string
@@ -41,8 +39,8 @@ type FlowAggregate struct {
 	bytes   uint64
 }
 
-func (agg *FlowAggregate) ToTelemetry() *FlowTelemetry {
-	millis := uint64(time.Since(agg.start).Milliseconds())
+func (agg *FlowAggregate) ToTelemetry(interval time.Duration) *FlowTelemetry {
+	millis := uint64(interval.Milliseconds())
 	if millis < 1 {
 		millis = 1
 	}
@@ -103,6 +101,7 @@ type DnHalImpl struct {
 	}
 	flows struct {
 		state     *gfu.StateNetFlow
+		start     time.Time
 		aggregate map[string]*FlowAggregate
 	}
 	aclRules map[int]string
@@ -149,6 +148,7 @@ func (hal *DnHalImpl) InitFlows() {
 		Logger:    log.StandardLogger(),
 	}
 
+	hal.flows.start = time.Now()
 	hal.flows.aggregate = make(map[string]*FlowAggregate)
 }
 
@@ -720,7 +720,6 @@ func (hal *DnHalImpl) Publish(update []*flowmessage.FlowMessage) {
 			agg.outIf = outIf
 		} else {
 			agg = &FlowAggregate{
-				start:   time.Now(),
 				key:     fk,
 				inIf:    inIf,
 				outIf:   outIf,
@@ -736,17 +735,20 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 	aggregate := make(map[string]*FlowAggregate)
 	// Swap current active with empty one
 	aggregate, hal.flows.aggregate = hal.flows.aggregate, aggregate
+
+	now, prev := time.Now(), hal.flows.start
+	hal.flows.start = now
 	if hal.debug {
 		dbg := NewFlowsDebugger()
 		for _, agg := range aggregate {
-			stats := agg.ToTelemetry()
+			stats := agg.ToTelemetry(now.Sub(prev))
 			dbg.Flow(agg.key, stats)
 			v(agg.key, stats)
 		}
 		dbg.Print()
 	} else {
 		for _, agg := range aggregate {
-			stats := agg.ToTelemetry()
+			stats := agg.ToTelemetry(now.Sub(prev))
 			v(agg.key, stats)
 		}
 
