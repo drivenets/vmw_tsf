@@ -14,23 +14,20 @@ import (
 
 	hal "github.com/drivenets/vmw_tsf/pkg/hal"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 var monFlowsOpt bool
 var monIfcOpt bool
 var monInterval float64
-var flushSteerOpt bool
 var steerFromOpt string
 var steerToOpt string
 var steerProtoOpt string
 var steerNextHopOpt string
-var aclRuleId int
 var noClsOpt bool
 var noTwampOpt bool
-var batchOpt bool
 var countOpt int
 var accOpt bool
-var statsServerOpt bool
 
 func handleSteer(h hal.DnHal) {
 
@@ -76,7 +73,6 @@ func handleSteer(h hal.DnHal) {
 		panic("unexpected flow protocol")
 	}
 
-	//hal.SetAclRuleIndex(aclRuleId)
 	if steerNextHopOpt == "" {
 		err = h.RemoveSteer([]hal.FlowKey{fk})
 	} else {
@@ -459,53 +455,90 @@ func batch(h hal.DnHal) {
 }
 
 func main() {
-	flag.BoolVar(&monFlowsOpt, "flows", false, "monitor flows")
-	flag.BoolVar(&monIfcOpt, "interfaces", false, "monitor interfaces")
-	flag.Float64Var(&monInterval, "interval", 1, "monitoring interval")
-	flag.BoolVar(&flushSteerOpt, "flush", false, "flush old steering rules")
-	flag.StringVar(&steerFromOpt, "from", "", "steer flow source ip:port")
-	flag.StringVar(&steerToOpt, "to", "", "steer flow destination ip:port")
-	flag.StringVar(&steerProtoOpt, "proto", "tcp", "steer flow protocol")
-	flag.StringVar(&steerNextHopOpt, "next-hop", "", "steer to next-hop")
-	flag.BoolVar(&noClsOpt, "nocls", false, "do not clear screen")
-	flag.IntVar(&aclRuleId, "id", 10, "steer rule id")
-	flag.BoolVar(&noTwampOpt, "notw", false, "do not start twamp measurements")
-	flag.BoolVar(&batchOpt, "batch", false, "batch mode exit after first interval")
-	flag.IntVar(&countOpt, "count", 1, "how many batch rounds to execute")
-	flag.BoolVar(&accOpt, "accumulate", false, "accumulate flow statistics in batch mode")
-	flag.BoolVar(&statsServerOpt, "stats", false, "enable grpc stats server")
-	flag.Parse()
+	rootCmd := &cobra.Command{Use: "hal-client"}
 
-	if noTwampOpt {
-		os.Setenv("SKIP_TWAMP", "1")
+	cmdMonitor := &cobra.Command{
+		Use:   "monitor",
+		Short: "Monitor interface and flows statistics",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !(monFlowsOpt || monIfcOpt) {
+				return fmt.Errorf("nothing to monitor")
+			}
+			if noTwampOpt {
+				os.Setenv("SKIP_TWAMP", "1")
+			}
+			os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
+			opts := make([]hal.OptionHal, 0)
+			h := hal.NewDnHal(opts...)
+			monitor(h)
+			return nil
+		},
 	}
-	if !(monFlowsOpt || monIfcOpt) {
-		os.Setenv("SKIP_TWAMP", "1")
-	}
+	cmdMonitor.Flags().BoolVarP(&monFlowsOpt, "flows", "f", false, "monitor flows")
+	cmdMonitor.Flags().BoolVarP(&monIfcOpt, "interfaces", "i", false, "monitor interfaces")
+	cmdMonitor.Flags().Float64VarP(&monInterval, "interval", "t", 1, "monitoring interval")
+	cmdMonitor.Flags().BoolVarP(&noTwampOpt, "notw", "w", false, "do not start twamp measurements")
+	cmdMonitor.Flags().BoolVarP(&noClsOpt, "nocls", "n", false, "do not clear screen")
+	rootCmd.AddCommand(cmdMonitor)
 
-	os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
+	cmdFlush := &cobra.Command{
+		Use:   "flush",
+		Short: "Flush steering rules",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			os.Setenv("SKIP_TWAMP", "1")
+			opts := make([]hal.OptionHal, 0, 1)
+			opts = append(opts, hal.OptionHalFlushSteer())
+			hal.NewDnHal(opts...)
+		},
+	}
+	rootCmd.AddCommand(cmdFlush)
 
-	opts := make([]hal.OptionHal, 0, 1)
-	if flushSteerOpt {
-		opts = append(opts, hal.OptionHalFlushSteer())
+	cmdSteer := &cobra.Command{
+		Use:   "steer",
+		Short: "Steer traffic flow",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			os.Setenv("SKIP_TWAMP", "1")
+			opts := make([]hal.OptionHal, 0)
+			h := hal.NewDnHal(opts...)
+			handleSteer(h)
+		},
 	}
-	if statsServerOpt {
-		opts = append(opts, hal.OptionHalStatsServer())
-	}
-	h := hal.NewDnHal(opts...)
-	handleSteer(h)
-	if !(monFlowsOpt || monIfcOpt) {
-		return
-	}
+	cmdSteer.Flags().StringVarP(&steerFromOpt, "from", "f", "", "steer flow source ip:port")
+	cmdSteer.Flags().StringVarP(&steerToOpt, "to", "t", "", "steer flow destination ip:port")
+	cmdSteer.Flags().StringVarP(&steerProtoOpt, "proto", "p", "tcp", "steer flow protocol")
+	cmdSteer.Flags().StringVarP(&steerNextHopOpt, "next-hop", "n", "", "steer to next-hop")
+	rootCmd.AddCommand(cmdSteer)
 
-	if accOpt {
-		batchOpt = true
+	cmdBatch := &cobra.Command{
+		Use:   "batch",
+		Short: "machine-friendly monitor output",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !(monFlowsOpt || monIfcOpt) {
+				return fmt.Errorf("nothing to monitor")
+			}
+			if noTwampOpt {
+				os.Setenv("SKIP_TWAMP", "1")
+			}
+			os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
+			opts := make([]hal.OptionHal, 0)
+			h := hal.NewDnHal(opts...)
+			batch(h)
+			return nil
+		},
 	}
+	cmdBatch.Flags().BoolVarP(&monFlowsOpt, "flows", "f", false, "monitor flows")
+	cmdBatch.Flags().BoolVarP(&monIfcOpt, "interfaces", "i", false, "monitor interfaces")
+	cmdBatch.Flags().Float64VarP(&monInterval, "interval", "t", 1, "monitoring interval")
+	cmdBatch.Flags().BoolVarP(&noTwampOpt, "notw", "w", false, "do not start twamp measurements")
+	cmdBatch.Flags().IntVarP(&countOpt, "count", "c", 1, "how many intervals to run")
+	cmdBatch.Flags().BoolVarP(&accOpt, "accumulate", "a", false, "accumulate flow statistics in batch mode")
+	rootCmd.AddCommand(cmdBatch)
 
-	if batchOpt {
-		batch(h)
-	} else {
-		monitor(h)
-	}
-
+	// see https://github.com/golang/glog/commit/fca8c8854093a154ff1eb580aae10276ad6b1b5f
+	flag.CommandLine.Parse([]string{})
+	rootCmd.Execute()
 }
