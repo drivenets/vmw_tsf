@@ -1,12 +1,15 @@
 package hal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	stdLog "log"
 	"net"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -19,6 +22,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"text/template"
 	"time"
 
 	gfu "github.com/cloudflare/goflow/v3/utils"
@@ -1126,4 +1130,437 @@ func statsServer(hal *DnHalImpl) {
 	pb.RegisterStatsServer(grpcServer, NewStatsServer(hal))
 	log.Info("Starting gRPC stats server")
 	grpcServer.Serve(lis)
+}
+
+const (
+	rsvpTunnelAddXml = `<edit-config>
+<target><candidate/></target>
+<default-operation>merge</default-operation>
+<error-option>rollback-on-error</error-option>
+<config xmlns:dn-top="http://drivenets.com/ns/yang/dn-top" xmlns:dn-protocol="http://drivenets.com/ns/yang/dn-protocol" xmlns:dn-rsvp="http://drivenets.com/ns/yang/dn-rsvp">
+<dn-top:drivenets-top>
+  <dn-protocol:protocols>
+	<dn-rsvp:rsvp>
+	  <tunnels>
+		<tunnel>
+		  <tunnel-name>{{.name}}</tunnel-name>
+		  <primary>
+			<config-items>
+			  <cspf-calculation>disabled</cspf-calculation>
+			</config-items>
+			<path-options>
+			  <path-option>
+				<config-items>
+				  <explicit-path-name>{{.name}}path</explicit-path-name>
+				  <priority>1</priority>
+				</config-items>
+				<priority>1</priority>
+			  </path-option>
+			</path-options>
+		  </primary>
+		  <global>
+			<config-items>
+			  <source-address>{{.source}}</source-address>
+			  <destination-address>{{.destination}}</destination-address>
+			  <admin-state>enabled</admin-state>
+			  <tunnel-name>{{.name}}</tunnel-name>
+			</config-items>
+		  </global>
+		</tunnel>
+	  </tunnels>
+	</dn-rsvp:rsvp>
+  </dn-protocol:protocols>
+</dn-top:drivenets-top>
+</config>
+</edit-config>`
+)
+
+func MethodRsvpTunnelAdd(name string, source net.IP, destination net.IP) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(rsvpTunnelAddXml)).
+		Execute(body, map[string]interface{}{
+			"name":        name,
+			"source":      source,
+			"destination": destination,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t TunnelType, haloAddr net.IP, haloNet net.IPNet) error {
+	if t != RSVP {
+		return fmt.Errorf("ERROR: Failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
+	}
+
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodRsvpTunnelAdd(name, source, destination))
+	if err != nil {
+		return fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	if ifc, err := GetTunnelInterface(name, t); err == nil {
+		siIfc := SiInterface{
+			Physical: ifc,
+			Address:  haloAddr,
+			Network:  haloNet,
+		}
+		if err = AddSiInterface(SI_HALO_NAME, siIfc); err != nil {
+			log.Warningf("failed to add SI interface: %s", err)
+			return err
+		}
+	}
+	return commitChanges()
+}
+
+const (
+	rsvpTunnelDeleteXml = `<edit-config>
+<target><candidate/></target>
+<default-operation>none</default-operation>
+<error-option>rollback-on-error</error-option>
+<config xmlns:dn-top="http://drivenets.com/ns/yang/dn-top" xmlns:dn-protocol="http://drivenets.com/ns/yang/dn-protocol" xmlns:dn-rsvp="http://drivenets.com/ns/yang/dn-rsvp">
+	<dn-top:drivenets-top>
+		<dn-protocol:protocols>
+			<dn-rsvp:rsvp>
+			<tunnels>
+				<tunnel operation="delete">
+					<tunnel-name>{{.name}}</tunnel-name>
+				</tunnel>
+			</tunnels>
+			</dn-rsvp:rsvp>
+		</dn-protocol:protocols>
+	</dn-top:drivenets-top>
+</config>
+</edit-config>`
+)
+
+func MethodRsvpTunnelDelete(name string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(rsvpTunnelDeleteXml)).
+		Execute(body, map[string]interface{}{
+			"name": name,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+const SI_HALO_NAME = "halo"
+
+func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
+	if t != RSVP {
+		return fmt.Errorf("failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
+	}
+
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodRsvpTunnelDelete(name))
+	if err != nil {
+		return fmt.Errorf("reply: %v, error: %s", reply, err)
+	} else {
+		log.Infof("deleted tunnel %s, type %v", name, t)
+	}
+	if ifc, err := GetTunnelInterface(name, t); err == nil {
+		if iflist, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
+			log.Warnf("skip SI %s interface delete. Reason: %s", SI_HALO_NAME, err)
+		} else {
+			for _, haloIfc := range iflist {
+				if ifc == haloIfc.Physical {
+					log.Infof("found matching SI %s interface %s. Delete it from config", SI_HALO_NAME, ifc)
+					if err = DeleteSiInterface(SI_HALO_NAME, ifc); err != nil {
+						log.Infof("failed to delete si interface: %s", err)
+						return err
+					}
+				}
+			}
+		}
+	}
+	return commitChanges()
+}
+
+const (
+	rsvpTunnelGetExplicitPath = `
+<get-config>
+    <source><running/></source>
+	<filter type="subree">
+		<drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+		<protocols>
+		<rsvp>
+			<explicit-paths>
+			<explicit-path>
+				<path-name>{{.name}}</path-name>
+			</explicit-path>
+			</explicit-paths>
+		</rsvp>
+		</protocols>
+		</drivenets-top>
+	</filter>
+</get-config>`
+)
+
+func MethodRsvpTunnelGetExplicitPath(name string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(rsvpTunnelGetExplicitPath)).
+		Execute(body, map[string]interface{}{
+			"name": name,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+func GetTunnelInterface(name string, t TunnelType) (string, error) {
+	if t != RSVP {
+		return "", fmt.Errorf("ERROR: Failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
+	}
+
+	session := NetConfConnector()
+	path := fmt.Sprintf("%spath", name)
+	reply, err := session.Exec(MethodRsvpTunnelGetExplicitPath(path))
+	if err != nil {
+		return "", fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	addr := net.ParseIP(regexp.MustCompile("<ipv4-address>([0-9.]+)</ipv4-address>").
+		FindStringSubmatch(reply.Data)[1])
+	ifc, err := GetInterfaceConnectedTo(addr)
+	if err != nil {
+		log.Info(err)
+		return "", err
+	}
+	return ifc, nil
+}
+
+const (
+	interfacesGetXml = `
+<get-config>
+    <source><running/></source>
+	<filter type="subree">
+		<drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+		<interfaces>
+			<interface>
+			<ipv4>
+			<addresses>
+				<address>
+					<config-items/>
+				</address>
+			</addresses>
+			</ipv4>
+			</interface>
+		</interfaces>
+		</drivenets-top>
+	</filter>
+</get-config>`
+)
+
+type ipv4configXml struct {
+	Ip           string `xml:"ip"`
+	PrefixLength string `xml:"prefix-length"`
+}
+
+func MethodInterfacesGet() netconf.RawMethod {
+	return netconf.RawMethod(interfacesGetXml)
+}
+
+func GetInterfaceConnectedTo(addr net.IP) (string, error) {
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodInterfacesGet())
+	if err != nil {
+		return "", fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	d := xml.NewDecoder(strings.NewReader(reply.Data))
+	var ifc string
+	for {
+		tok, err := d.Token()
+		if tok == nil || err == io.EOF {
+			break
+		} else if err != nil {
+			return "", fmt.Errorf("invalid token: %s. XML Response: %s", err, reply.Data)
+		}
+		switch ty := tok.(type) {
+		case xml.StartElement:
+			if ty.Name.Local == "name" {
+				if tok, err := d.Token(); err == nil {
+					if name, ok := tok.(xml.CharData); ok {
+						ifc = string(name)
+					}
+				}
+			}
+			if ty.Name.Local == "config-items" {
+				var cfg ipv4configXml
+				if err = d.DecodeElement(&cfg, &ty); err != nil {
+					return "", fmt.Errorf("invalid item: %s", err)
+				}
+				if _, ifnet, err := net.ParseCIDR(fmt.Sprintf("%s/%s", cfg.Ip, cfg.PrefixLength)); err == nil {
+					if ifnet.Contains(addr) {
+						return ifc, nil
+					}
+				}
+			}
+		default:
+		}
+	}
+	return "", fmt.Errorf("no interface for IP %s", addr)
+}
+
+const serviceInstanceInterfacesGetXml = `
+<get-config>
+    <source><running/></source>
+	<filter type="subree">
+		<drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+		<service-instances>
+		<instances>
+			<instance>
+				<si-name>{{.name}}</si-name>
+			<config-items>
+				<interfaces>
+				<interface/>
+				</interfaces>
+			</config-items>
+			</instance>
+		</instances>
+		</service-instances>
+		</drivenets-top>
+	</filter>
+</get-config>`
+
+func MethodServiceInstanceInterfacesGet(name string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(serviceInstanceInterfacesGetXml)).
+		Execute(body, map[string]interface{}{
+			"name": name,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+type SiInterface struct {
+	Physical string
+	Address  net.IP
+	Network  net.IPNet
+}
+
+type siInterfaceCfg struct {
+	Name string `xml:"interface-name"`
+	Addr string `xml:"ipv4-address"`
+}
+
+func GetServiceInstanceInterfaces(name string) ([]SiInterface, error) {
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodServiceInstanceInterfacesGet(name))
+	if err != nil {
+		return nil, fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	d := xml.NewDecoder(strings.NewReader(reply.Data))
+	ifc := make([]SiInterface, 0)
+	for {
+		tok, err := d.Token()
+		if tok == nil || err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("invalid token: %s. XML Response: %s", err, reply.Data)
+		}
+		switch ty := tok.(type) {
+		case xml.StartElement:
+			if ty.Name.Local == "interface" {
+				var cfg siInterfaceCfg
+				if err = d.DecodeElement(&cfg, &ty); err != nil {
+					return nil, fmt.Errorf("invalid item: %s", err)
+				}
+				if addr, network, err := net.ParseCIDR(cfg.Addr); err != nil {
+					return nil, fmt.Errorf("invalid address: %s", cfg.Addr)
+				} else {
+					ifc = append(ifc, SiInterface{
+						Physical: cfg.Name,
+						Address:  addr,
+						Network:  *network,
+					})
+				}
+			}
+		default:
+		}
+	}
+	return ifc, nil
+}
+
+const siInterfaceDeleteXml = `
+<edit-config>
+  <target><candidate/></target>
+  <default-operation>none</default-operation>
+  <error-option>rollback-on-error</error-option>
+  <config xmlns:dn-hyper-instances="http://drivenets.com/ns/yang/dn-hyper-instances" xmlns:dn-top="http://drivenets.com/ns/yang/dn-top" xmlns:dn-hyper-service-instances="http://drivenets.com/ns/yang/dn-hyper-service-instances">
+    <dn-top:drivenets-top>
+      <dn-hyper-service-instances:service-instances>
+        <dn-hyper-instances:instances>
+          <instance>
+			<si-name>{{.name}}</si-name>
+            <config-items>
+              <interfaces>
+                <interface operation="delete">
+                  <interface-name>{{.interface}}</interface-name>
+                </interface>
+              </interfaces>
+            </config-items>
+          </instance>
+        </dn-hyper-instances:instances>
+      </dn-hyper-service-instances:service-instances>
+    </dn-top:drivenets-top>
+  </config>
+</edit-config>`
+
+func MethodSiInterfaceDelete(name string, ifname string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(siInterfaceDeleteXml)).
+		Execute(body, map[string]interface{}{
+			"name":      name,
+			"interface": ifname,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+func DeleteSiInterface(name string, ifname string) error {
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodSiInterfaceDelete(name, ifname))
+	if err != nil {
+		return fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	return nil
+}
+
+const siInterfaceAddXml = `
+<edit-config>
+  <target><candidate/></target>
+  <default-operation>merge</default-operation>
+  <error-option>rollback-on-error</error-option>
+  <config xmlns:dn-hyper-instances="http://drivenets.com/ns/yang/dn-hyper-instances" xmlns:dn-top="http://drivenets.com/ns/yang/dn-top" xmlns:dn-hyper-service-instances="http://drivenets.com/ns/yang/dn-hyper-service-instances">
+    <dn-top:drivenets-top>
+      <dn-hyper-service-instances:service-instances>
+        <dn-hyper-instances:instances>
+          <instance>
+			<si-name>{{.name}}</si-name>
+            <config-items>
+              <interfaces>
+                <interface>
+                  <interface-name>{{.interface}}</interface-name>
+				  <ipv4-address>{{.address}}</ipv4-address>
+                </interface>
+              </interfaces>
+            </config-items>
+          </instance>
+        </dn-hyper-instances:instances>
+      </dn-hyper-service-instances:service-instances>
+    </dn-top:drivenets-top>
+  </config>
+</edit-config>`
+
+func MethodSiInterfaceAdd(name string, ifname string, address string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(siInterfaceAddXml)).
+		Execute(body, map[string]interface{}{
+			"name":      name,
+			"interface": ifname,
+			"address":   address,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+func AddSiInterface(name string, ifc SiInterface) error {
+	session := NetConfConnector()
+	plen, _ := ifc.Network.Mask.Size()
+	reply, err := session.Exec(MethodSiInterfaceAdd(name, ifc.Physical,
+		fmt.Sprintf("%s/%d", ifc.Address, plen)))
+	if err != nil {
+		return fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	return nil
 }

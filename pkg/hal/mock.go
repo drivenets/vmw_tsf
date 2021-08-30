@@ -143,3 +143,11 @@ func (*DnHalMockImpl) GetFlows(v FlowVisitor) error {
 	}
 	return nil
 }
+
+func (h *DnHalMockImpl) AddTunnel(string, net.IP, net.IP, TunnelType, net.IP, net.IPNet) error {
+	panic("NOT IMPLEMENTED")
+}
+
+func (h *DnHalMockImpl) DeleteTunnel(string, TunnelType) error {
+	panic("NOT IMPLEMENTED")
+}

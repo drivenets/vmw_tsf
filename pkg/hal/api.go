@@ -75,6 +75,12 @@ type FlowTelemetry struct {
 type InterfaceVisitor func(string, *InterfaceTelemetry) error
 type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 
+type TunnelType int
+
+const (
+	RSVP TunnelType = iota
+)
+
 // DnHal interface
 type DnHal interface {
 	Steer([]SteerItem) error
@@ -84,4 +90,6 @@ type DnHal interface {
 	GetLanInterfaces(InterfaceVisitor) error
 	GetWanInterfaces(InterfaceVisitor) error
 	GetFlows(FlowVisitor) error
+	AddTunnel(string, net.IP, net.IP, TunnelType, net.IP, net.IPNet) error
+	DeleteTunnel(string, TunnelType) error
 }

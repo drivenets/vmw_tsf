@@ -28,6 +28,11 @@ var noClsOpt bool
 var noTwampOpt bool
 var countOpt int
 var accOpt bool
+var tunNameOpt string
+var tunTypeOpt string
+var tunSrcOpt string
+var tunDstOpt string
+var tunHaloIfcOpt string
 
 func handleSteer(h hal.DnHal) {
 
@@ -454,6 +459,56 @@ func batch(h hal.DnHal) {
 	}
 }
 
+func handleTunnelAdd(h hal.DnHal) error {
+	var err error
+
+	if len(tunNameOpt) == 0 {
+		return fmt.Errorf("empty tunnel name")
+	}
+
+	if len(tunSrcOpt) == 0 {
+		return fmt.Errorf("empty tunnel source address")
+	}
+	src := net.ParseIP(tunSrcOpt)
+	if src == nil {
+		return fmt.Errorf("invalid tunnel source address: %s", tunSrcOpt)
+	}
+	if len(tunDstOpt) == 0 {
+		return fmt.Errorf("empty tunnel destination address")
+	}
+	dst := net.ParseIP(tunDstOpt)
+	if dst == nil {
+		return fmt.Errorf("invalid tunnel destination address: %s", tunSrcOpt)
+	}
+
+	if tunTypeOpt != "rsvp" {
+		return fmt.Errorf("unsupported tunnel type: %s (try 'rsvp' instead)", tunTypeOpt)
+	}
+
+	if len(tunHaloIfcOpt) == 0 {
+		return fmt.Errorf("empty tunnel halo address & mask")
+	}
+	haloAddr, haloNet, err := net.ParseCIDR(tunHaloIfcOpt)
+	if err != nil {
+		return err
+	}
+	h.AddTunnel(tunNameOpt, src, dst, hal.RSVP, haloAddr, *haloNet)
+	return nil
+}
+
+func handleTunnelDelete(h hal.DnHal) error {
+	if len(tunNameOpt) == 0 {
+		return fmt.Errorf("empty tunnel name")
+	}
+
+	if tunTypeOpt != "rsvp" {
+		return fmt.Errorf("unsupported tunnel type: %s (try 'rsvp' instead)", tunTypeOpt)
+	}
+
+	h.DeleteTunnel(tunNameOpt, hal.RSVP)
+	return nil
+}
+
 func main() {
 	rootCmd := &cobra.Command{Use: "hal-client"}
 
@@ -538,7 +593,55 @@ func main() {
 	cmdBatch.Flags().BoolVarP(&accOpt, "accumulate", "a", false, "accumulate flow statistics in batch mode")
 	rootCmd.AddCommand(cmdBatch)
 
+	cmdTunnel := &cobra.Command{
+		Use:   "tunnel",
+		Short: "Tunnel commands",
+		Args:  cobra.NoArgs,
+	}
+	cmdTunnelAdd := &cobra.Command{
+		Use:   "add",
+		Short: "Add tunnel",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			os.Setenv("SKIP_TWAMP", "1")
+			opts := make([]hal.OptionHal, 0)
+			h := hal.NewDnHal(opts...)
+			return handleTunnelAdd(h)
+		},
+	}
+	cmdTunnelAdd.Flags().StringVarP(&tunNameOpt, "name", "n", "", "Tunnel name")
+	cmdTunnelAdd.MarkFlagRequired("name")
+	cmdTunnelAdd.Flags().StringVarP(&tunTypeOpt, "type", "t", "rsvp", "Tunnel type")
+	cmdTunnelAdd.Flags().StringVarP(&tunSrcOpt, "source", "s", "", "Tunnel source IP")
+	cmdTunnelAdd.MarkFlagRequired("source")
+	cmdTunnelAdd.Flags().StringVarP(&tunDstOpt, "destination", "d", "", "Tunnel destination IP")
+	cmdTunnelAdd.MarkFlagRequired("destination")
+	cmdTunnelAdd.Flags().StringVarP(&tunHaloIfcOpt, "halo", "i", "", "Halo interface IP & netmask")
+	cmdTunnelAdd.MarkFlagRequired("halo")
+	cmdTunnel.AddCommand(cmdTunnelAdd)
+
+	cmdTunnelDelete := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete tunnel",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			os.Setenv("SKIP_TWAMP", "1")
+			opts := make([]hal.OptionHal, 0)
+			h := hal.NewDnHal(opts...)
+			return handleTunnelDelete(h)
+		},
+	}
+	cmdTunnelDelete.Flags().StringVarP(&tunNameOpt, "name", "n", "", "Tunnel name")
+	cmdTunnelDelete.MarkFlagRequired("name")
+	cmdTunnelDelete.Flags().StringVarP(&tunTypeOpt, "type", "t", "rsvp", "Tunnel type")
+	cmdTunnel.AddCommand(cmdTunnelDelete)
+
+	rootCmd.AddCommand(cmdTunnel)
+
 	// see https://github.com/golang/glog/commit/fca8c8854093a154ff1eb580aae10276ad6b1b5f
 	flag.CommandLine.Parse([]string{})
-	rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
