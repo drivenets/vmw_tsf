@@ -1,8 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/drivenets/vmw_tsf/pkg/stats/proto";
-
-package stats;
+option go_package = "github.com/drivenets/vmw_tsf/pkg/hal/proto";
 
 service Stats {
 	rpc GetInterfaces(Empty) returns (stream Interface) {}
@@ -26,3 +24,26 @@ message Interface {
 message CacheSize{
 	uint64 Size = 1;
 }
+
+service Management {
+    rpc AddLanInterface(AddLanInterfaceArgs) returns (Empty) {}
+    rpc AddWanInterface(AddWanInterfaceArgs) returns (Empty) {}
+    rpc DeleteInterface(DeleteInterfaceArgs) returns (Empty) {}
+}
+
+message AddLanInterfaceArgs {
+    string Upper = 1;
+    string Lower = 2;
+}
+
+message AddWanInterfaceArgs {
+    string Upper = 1;
+    string Lower = 2;
+    string NextHop = 3;
+    string Twamp = 4;
+}
+
+message DeleteInterfaceArgs {
+    string Upper = 1;
+}
+

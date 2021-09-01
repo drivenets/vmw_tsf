@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	hal "github.com/drivenets/vmw_tsf/pkg/hal"
+	pb "github.com/drivenets/vmw_tsf/pkg/hal/proto"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +28,7 @@ var steerProtoOpt string
 var steerNextHopOpt string
 var noClsOpt bool
 var noTwampOpt bool
+var serverOpt bool
 var countOpt int
 var accOpt bool
 var tunNameOpt string
@@ -33,6 +36,11 @@ var tunTypeOpt string
 var tunSrcOpt string
 var tunDstOpt string
 var tunHaloIfcOpt string
+var ifcUpperOpt string
+var ifcLowerOpt string
+var ifcNextHopOpt string
+var ifcTwampOpt string
+var ifcNameOpt string
 
 func handleSteer(h hal.DnHal) {
 
@@ -509,6 +517,78 @@ func handleTunnelDelete(h hal.DnHal) error {
 	return nil
 }
 
+func handleInterfaceAddWan() error {
+	var ifcNameOpt string
+	if len(ifcUpperOpt) == 0 {
+		return fmt.Errorf("empty upper interface name")
+	}
+	if len(ifcLowerOpt) == 0 {
+		return fmt.Errorf("empty lower interface name")
+	}
+	if len(ifcNextHopOpt) == 0 {
+		return fmt.Errorf("empty next hop")
+	}
+	if len(ifcTwampOpt) == 0 {
+		return fmt.Errorf("empty twamp endpoint")
+	}
+	mgr := hal.GetMgmtClient()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tmo, _ := context.WithTimeout(ctx, time.Duration(1)*time.Second)
+	status, err := mgr.AddWanInterface(tmo, &pb.AddWanInterfaceArgs{
+		Upper:   ifcUpperOpt,
+		Lower:   ifcLowerOpt,
+		NextHop: ifcNextHopOpt,
+		Twamp:   ifcTwampOpt,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add interface: status=%v, err=%v", status, err)
+	}
+	log.Infof("interface %s added", ifcNameOpt)
+	return nil
+}
+
+func handleInterfaceAddLan() error {
+	var ifcNameOpt string
+	if len(ifcUpperOpt) == 0 {
+		return fmt.Errorf("empty upper interface name")
+	}
+	if len(ifcLowerOpt) == 0 {
+		return fmt.Errorf("empty lower interface name")
+	}
+	mgr := hal.GetMgmtClient()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tmo, _ := context.WithTimeout(ctx, time.Duration(1)*time.Second)
+	status, err := mgr.AddLanInterface(tmo, &pb.AddLanInterfaceArgs{
+		Upper: ifcUpperOpt,
+		Lower: ifcLowerOpt,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add interface: status=%v, err=%v", status, err)
+	}
+	log.Infof("interface %s added", ifcNameOpt)
+	return nil
+}
+
+func handleInterfaceDelete() error {
+	if len(ifcNameOpt) == 0 {
+		return fmt.Errorf("empty interface name")
+	}
+	mgr := hal.GetMgmtClient()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tmo, _ := context.WithTimeout(ctx, time.Duration(1)*time.Second)
+	status, err := mgr.DeleteInterface(tmo, &pb.DeleteInterfaceArgs{
+		Upper: ifcNameOpt,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to remove interface: status=%v, err=%v", status, err)
+	}
+	log.Infof("interface %s removed", ifcNameOpt)
+	return nil
+}
+
 func main() {
 	rootCmd := &cobra.Command{Use: "hal-client"}
 
@@ -525,6 +605,9 @@ func main() {
 			}
 			os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
 			opts := make([]hal.OptionHal, 0)
+			if serverOpt {
+				opts = append(opts, hal.OptionHalStatsServer())
+			}
 			h := hal.NewDnHal(opts...)
 			monitor(h)
 			return nil
@@ -534,7 +617,8 @@ func main() {
 	cmdMonitor.Flags().BoolVarP(&monIfcOpt, "interfaces", "i", false, "monitor interfaces")
 	cmdMonitor.Flags().Float64VarP(&monInterval, "interval", "t", 1, "monitoring interval")
 	cmdMonitor.Flags().BoolVarP(&noTwampOpt, "notw", "w", false, "do not start twamp measurements")
-	cmdMonitor.Flags().BoolVarP(&noClsOpt, "nocls", "n", false, "do not clear screen")
+	cmdMonitor.Flags().BoolVarP(&noClsOpt, "nocls", "c", false, "do not clear screen")
+	cmdMonitor.Flags().BoolVarP(&serverOpt, "server", "s", false, "start stats/management server")
 	rootCmd.AddCommand(cmdMonitor)
 
 	cmdFlush := &cobra.Command{
@@ -619,7 +703,6 @@ func main() {
 	cmdTunnelAdd.Flags().StringVarP(&tunHaloIfcOpt, "halo", "i", "", "Halo interface IP & netmask")
 	cmdTunnelAdd.MarkFlagRequired("halo")
 	cmdTunnel.AddCommand(cmdTunnelAdd)
-
 	cmdTunnelDelete := &cobra.Command{
 		Use:   "delete",
 		Short: "Delete tunnel",
@@ -635,8 +718,61 @@ func main() {
 	cmdTunnelDelete.MarkFlagRequired("name")
 	cmdTunnelDelete.Flags().StringVarP(&tunTypeOpt, "type", "t", "rsvp", "Tunnel type")
 	cmdTunnel.AddCommand(cmdTunnelDelete)
-
 	rootCmd.AddCommand(cmdTunnel)
+
+	cmdInterface := &cobra.Command{
+		Use:   "interface",
+		Short: "Interface commands",
+		Args:  cobra.NoArgs,
+	}
+	cmdInterfaceAdd := &cobra.Command{
+		Use:   "add",
+		Short: "Add interface",
+		Args:  cobra.NoArgs,
+	}
+	cmdInterfaceAddWan := &cobra.Command{
+		Use:   "wan",
+		Short: "Add Wan interface",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return handleInterfaceAddWan()
+		},
+	}
+	cmdInterfaceAddWan.Flags().StringVarP(&ifcUpperOpt, "upper", "u", "", "Interface upper name (inside container)")
+	cmdInterfaceAddWan.MarkFlagRequired("upper")
+	cmdInterfaceAddWan.Flags().StringVarP(&ifcLowerOpt, "lower", "l", "", "Interface lower name (DNOS attached)")
+	cmdInterfaceAddWan.MarkFlagRequired("lower")
+	cmdInterfaceAddWan.Flags().StringVarP(&ifcNextHopOpt, "next-hop", "n", "", "IP address of lower interface (as seen by flows)")
+	cmdInterfaceAddWan.MarkFlagRequired("next-hop")
+	cmdInterfaceAddWan.Flags().StringVarP(&ifcTwampOpt, "twamp", "t", "", "TWAMP endpoint for interface latency")
+	cmdInterfaceAddWan.MarkFlagRequired("twamp")
+	cmdInterfaceAdd.AddCommand(cmdInterfaceAddWan)
+	cmdInterfaceAddLan := &cobra.Command{
+		Use:   "lan",
+		Short: "Add Lan interface",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return handleInterfaceAddLan()
+		},
+	}
+	cmdInterfaceAddLan.Flags().StringVarP(&ifcUpperOpt, "upper", "u", "", "Interface upper name (inside container)")
+	cmdInterfaceAddLan.MarkFlagRequired("upper")
+	cmdInterfaceAddLan.Flags().StringVarP(&ifcLowerOpt, "lower", "l", "", "Interface lower name (DNOS attached)")
+	cmdInterfaceAddLan.MarkFlagRequired("lower")
+	cmdInterfaceAdd.AddCommand(cmdInterfaceAddLan)
+	cmdInterfaceDelete := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete interface",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return handleInterfaceDelete()
+		},
+	}
+	cmdInterfaceDelete.Flags().StringVarP(&ifcNameOpt, "name", "n", "", "Interface name")
+	cmdInterfaceDelete.MarkFlagRequired("name")
+	cmdInterface.AddCommand(cmdInterfaceAdd)
+	cmdInterface.AddCommand(cmdInterfaceDelete)
+	rootCmd.AddCommand(cmdInterface)
 
 	// see https://github.com/golang/glog/commit/fca8c8854093a154ff1eb580aae10276ad6b1b5f
 	flag.CommandLine.Parse([]string{})

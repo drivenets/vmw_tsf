@@ -19,7 +19,8 @@ clean:
 
 .PHONY: proto
 proto:
-	cd ./pkg/hal/proto && protoc --go_out=. --go_opt=paths=source_relative \
+	cd ./pkg/hal/proto \
+	&& protoc --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		stats.proto
 

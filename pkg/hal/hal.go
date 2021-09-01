@@ -308,6 +308,18 @@ func OptionInterfaceTwamp(peer string, port string) func(*Interface) error {
 	}
 }
 
+func (ifc *Interface) IsWan() bool {
+	wan := true
+	if ip4 := ifc.NextHop.To4(); ip4 != nil {
+		if ifc.NextHop.Equal(net.IPv4zero) {
+			wan = false
+		}
+	} else if ifc.NextHop.Equal(net.IPv6zero) {
+		wan = false
+	}
+	return wan
+}
+
 func NewInterface(options ...OptionInterface) (*Interface, error) {
 	ifc := &Interface{
 		NextHop:   net.ParseIP("0.0.0.0"),
@@ -322,20 +334,16 @@ func NewInterface(options ...OptionInterface) (*Interface, error) {
 	hal.interfaces.Map.Lock.Lock()
 	defer hal.interfaces.Map.Lock.Unlock()
 
+	if _, ok := hal.interfaces.Map.Upper2Interface[ifc.Upper]; ok {
+		return nil, fmt.Errorf("interface %s already exists", ifc.Upper)
+	}
+
 	hal.interfaces.Map.Lower2Interface[ifc.Lower] = ifc
 	hal.interfaces.Map.Upper2Interface[ifc.Upper] = ifc
 	if ifc.NetFlowId != NETFLOW_ID_INVALID {
 		hal.interfaces.Map.NetFlow2Interface[ifc.NetFlowId] = ifc
 	}
-	wan := true
-	if ip4 := ifc.NextHop.To4(); ip4 != nil {
-		if ifc.NextHop.Equal(net.IPv4zero) {
-			wan = false
-		}
-	} else if ifc.NextHop.Equal(net.IPv6zero) {
-		wan = false
-	}
-	if wan {
+	if ifc.IsWan() {
 		hal.interfaces.Map.NextHop2Interface[ifc.Upper] = ifc
 		hal.interfaces.Map.UpperSorted.Wan = append(
 			hal.interfaces.Map.UpperSorted.Wan, ifc.Upper)
@@ -345,7 +353,52 @@ func NewInterface(options ...OptionInterface) (*Interface, error) {
 			hal.interfaces.Map.UpperSorted.Lan, ifc.Upper)
 		sort.Strings(hal.interfaces.Map.UpperSorted.Lan)
 	}
+	if monitor != nil {
+		monitor.Add(ifc.Lower)
+	}
 	return ifc, nil
+}
+
+func remove(haystack []string, needle string) []string {
+	for i, item := range haystack {
+		if item == needle {
+			haystack = append(haystack[:i], haystack[i+1:]...)
+			break
+		}
+	}
+	return haystack
+}
+
+func RemoveInterface(upper string) error {
+	var ifc *Interface
+	var ok bool
+
+	hal.interfaces.Map.Lock.Lock()
+	defer hal.interfaces.Map.Lock.Unlock()
+
+	ifc, ok = hal.interfaces.Map.Upper2Interface[upper]
+	if !ok {
+		log.Infof("skip remove interface %s. Not found", upper)
+		return nil
+	}
+
+	log.Infof("remove interface %s", upper)
+	delete(hal.interfaces.Map.Lower2Interface, ifc.Lower)
+	delete(hal.interfaces.Map.Upper2Interface, ifc.Upper)
+	if ifc.NetFlowId != NETFLOW_ID_INVALID {
+		delete(hal.interfaces.Map.NetFlow2Interface, ifc.NetFlowId)
+	}
+	delete(hal.interfaces.Map.NextHop2Interface, ifc.Upper)
+	hal.interfaces.Map.UpperSorted.Wan = remove(
+		hal.interfaces.Map.UpperSorted.Wan, ifc.Upper)
+	hal.interfaces.Map.UpperSorted.Lan = remove(
+		hal.interfaces.Map.UpperSorted.Lan, ifc.Upper)
+	if monitor != nil {
+		if err := monitor.Remove(ifc.Lower); err != nil {
+			return fmt.Errorf("failed to remove interface monitor %s", ifc.Lower)
+		}
+	}
+	return nil
 }
 
 func (hal *DnHalImpl) InitInterfaces() {
@@ -548,6 +601,8 @@ func updateInterfaceDelayJitter(upper string, delay float64, jitter float64) {
 	}
 }
 
+var monitor *InterfaceMonitor
+
 func monitorInterfaces() {
 	conn, err := grpc.Dial(hal.grpcAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -555,13 +610,17 @@ func monitorInterfaces() {
 	}
 	defer conn.Close()
 
-	im, err := NewInterfaceMonitor(hal.grpcAddr, hal.interfaces.UpdateInterval)
+	monitor, err = NewInterfaceMonitor(hal.grpcAddr, hal.interfaces.UpdateInterval)
 	if err != nil {
 		log.Fatalf("Failed to start. Reason: %s", err)
 	}
 
-	for lower := range hal.interfaces.Map.Lower2Interface {
-		im.Add(lower)
+	for _, ifc := range copyLanInterfaces() {
+		monitor.Add(ifc.Lower)
+	}
+
+	for _, ifc := range copyWanInterfaces() {
+		monitor.Add(ifc.Lower)
 	}
 
 	twampTests := make(map[string]*twamp.TwampTest)
@@ -611,16 +670,16 @@ func monitorInterfaces() {
 	djt := time.NewTicker(hal.interfaces.UpdateInterval)
 	for {
 		select {
-		case u := <-im.Speed():
+		case u := <-monitor.Speed():
 			if ifc := findInterfaceByLower(u.Name); ifc == nil {
-				log.Warn("No such interface %s. Skip speed update: %v", u.Name, u.Stats)
+				log.Warnf("No such interface %s. Skip speed update: %v", u.Name, u.Stats)
 				continue
 			} else {
 				ifc.Stats.Speed = u.Stats.Speed
 			}
-		case u := <-im.Stats():
+		case u := <-monitor.Stats():
 			if ifc := findInterfaceByLower(u.Name); ifc == nil {
-				log.Warn("No such interface %s. Skip speed update: %v", u.Name, u.Stats)
+				log.Warnf("No such interface %s. Skip speed update: %v", u.Name, u.Stats)
 				continue
 			} else {
 				ifc.Stats.RxBytes = u.Stats.RxBytes
@@ -1128,7 +1187,8 @@ func statsServer(hal *DnHalImpl) {
 	}
 	grpcServer := grpc.NewServer()
 	pb.RegisterStatsServer(grpcServer, NewStatsServer(hal))
-	log.Info("Starting gRPC stats server")
+	pb.RegisterManagementServer(grpcServer, NewManagementServer(hal))
+	log.Info("Starting gRPC server")
 	grpcServer.Serve(lis)
 }
 
@@ -1563,4 +1623,22 @@ func AddSiInterface(name string, ifc SiInterface) error {
 		return fmt.Errorf("reply: %v, error: %s", reply, err)
 	}
 	return nil
+}
+
+var grpcConn *grpc.ClientConn
+var mgmtClient pb.ManagementClient
+
+const GRPC_MANAGEMENT_URL = "localhost:7732"
+
+func GetMgmtClient() pb.ManagementClient {
+	var err error
+	if grpcConn == nil {
+		ctx, _ := context.WithTimeout(context.Background(), time.Duration(1)*time.Second)
+		grpcConn, err = grpc.DialContext(ctx, GRPC_MANAGEMENT_URL, grpc.WithInsecure())
+		if err != nil {
+			log.Errorf("Failed to connect to %s. Reason: %v", GRPC_MANAGEMENT_URL, err)
+		}
+		mgmtClient = pb.NewManagementClient(grpcConn)
+	}
+	return mgmtClient
 }

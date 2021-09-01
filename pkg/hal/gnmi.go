@@ -22,6 +22,8 @@ type InterfaceUpdate struct {
 	Stats InterfaceTelemetry
 }
 
+type InterfaceMonitorOps func(*InterfaceMonitor)
+
 type InterfaceMonitor struct {
 	UpdateInterval time.Duration
 	Target         target.Target
@@ -168,8 +170,8 @@ func (im *InterfaceMonitor) Add(name string) {
 			}})
 }
 
-func (im *InterfaceMonitor) Remove(name string) {
-	im.Manager.Remove(name)
+func (im *InterfaceMonitor) Remove(name string) error {
+	return im.Manager.Remove(name)
 }
 
 func (im *InterfaceMonitor) Speed() chan InterfaceUpdate {

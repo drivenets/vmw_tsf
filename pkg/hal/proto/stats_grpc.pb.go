@@ -31,7 +31,7 @@ func NewStatsClient(cc grpc.ClientConnInterface) StatsClient {
 }
 
 func (c *statsClient) GetInterfaces(ctx context.Context, in *Empty, opts ...grpc.CallOption) (Stats_GetInterfacesClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Stats_ServiceDesc.Streams[0], "/stats.Stats/GetInterfaces", opts...)
+	stream, err := c.cc.NewStream(ctx, &Stats_ServiceDesc.Streams[0], "/Stats/GetInterfaces", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (x *statsGetInterfacesClient) Recv() (*Interface, error) {
 
 func (c *statsClient) GetAclCacheSize(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*CacheSize, error) {
 	out := new(CacheSize)
-	err := c.cc.Invoke(ctx, "/stats.Stats/GetAclCacheSize", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/Stats/GetAclCacheSize", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func _Stats_GetAclCacheSize_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/stats.Stats/GetAclCacheSize",
+		FullMethod: "/Stats/GetAclCacheSize",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StatsServer).GetAclCacheSize(ctx, req.(*Empty))
@@ -146,7 +146,7 @@ func _Stats_GetAclCacheSize_Handler(srv interface{}, ctx context.Context, dec fu
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Stats_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "stats.Stats",
+	ServiceName: "Stats",
 	HandlerType: (*StatsServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -161,5 +161,163 @@ var Stats_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
+	Metadata: "stats.proto",
+}
+
+// ManagementClient is the client API for Management service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ManagementClient interface {
+	AddLanInterface(ctx context.Context, in *AddLanInterfaceArgs, opts ...grpc.CallOption) (*Empty, error)
+	AddWanInterface(ctx context.Context, in *AddWanInterfaceArgs, opts ...grpc.CallOption) (*Empty, error)
+	DeleteInterface(ctx context.Context, in *DeleteInterfaceArgs, opts ...grpc.CallOption) (*Empty, error)
+}
+
+type managementClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewManagementClient(cc grpc.ClientConnInterface) ManagementClient {
+	return &managementClient{cc}
+}
+
+func (c *managementClient) AddLanInterface(ctx context.Context, in *AddLanInterfaceArgs, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/Management/AddLanInterface", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managementClient) AddWanInterface(ctx context.Context, in *AddWanInterfaceArgs, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/Management/AddWanInterface", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managementClient) DeleteInterface(ctx context.Context, in *DeleteInterfaceArgs, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/Management/DeleteInterface", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ManagementServer is the server API for Management service.
+// All implementations must embed UnimplementedManagementServer
+// for forward compatibility
+type ManagementServer interface {
+	AddLanInterface(context.Context, *AddLanInterfaceArgs) (*Empty, error)
+	AddWanInterface(context.Context, *AddWanInterfaceArgs) (*Empty, error)
+	DeleteInterface(context.Context, *DeleteInterfaceArgs) (*Empty, error)
+	mustEmbedUnimplementedManagementServer()
+}
+
+// UnimplementedManagementServer must be embedded to have forward compatible implementations.
+type UnimplementedManagementServer struct {
+}
+
+func (UnimplementedManagementServer) AddLanInterface(context.Context, *AddLanInterfaceArgs) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddLanInterface not implemented")
+}
+func (UnimplementedManagementServer) AddWanInterface(context.Context, *AddWanInterfaceArgs) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddWanInterface not implemented")
+}
+func (UnimplementedManagementServer) DeleteInterface(context.Context, *DeleteInterfaceArgs) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteInterface not implemented")
+}
+func (UnimplementedManagementServer) mustEmbedUnimplementedManagementServer() {}
+
+// UnsafeManagementServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ManagementServer will
+// result in compilation errors.
+type UnsafeManagementServer interface {
+	mustEmbedUnimplementedManagementServer()
+}
+
+func RegisterManagementServer(s grpc.ServiceRegistrar, srv ManagementServer) {
+	s.RegisterService(&Management_ServiceDesc, srv)
+}
+
+func _Management_AddLanInterface_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddLanInterfaceArgs)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServer).AddLanInterface(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Management/AddLanInterface",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServer).AddLanInterface(ctx, req.(*AddLanInterfaceArgs))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Management_AddWanInterface_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddWanInterfaceArgs)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServer).AddWanInterface(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Management/AddWanInterface",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServer).AddWanInterface(ctx, req.(*AddWanInterfaceArgs))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Management_DeleteInterface_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteInterfaceArgs)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServer).DeleteInterface(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Management/DeleteInterface",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServer).DeleteInterface(ctx, req.(*DeleteInterfaceArgs))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Management_ServiceDesc is the grpc.ServiceDesc for Management service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Management_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "Management",
+	HandlerType: (*ManagementServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "AddLanInterface",
+			Handler:    _Management_AddLanInterface_Handler,
+		},
+		{
+			MethodName: "AddWanInterface",
+			Handler:    _Management_AddWanInterface_Handler,
+		},
+		{
+			MethodName: "DeleteInterface",
+			Handler:    _Management_DeleteInterface_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "stats.proto",
 }
