@@ -422,18 +422,27 @@ func (hal *DnHalImpl) InitInterfaces() {
 	defer conn.Close()
 	client := gnmi.NewGNMIClient(conn)
 
-	if haloIf, ok = os.LookupEnv("HALO_LOCAL"); ok {
+	sys_interfaces, err := net.Interfaces()
+	if err != nil {
+		log.Fatalf("Failed to list network interfaces: %v", err)
+	}
+
+	for _, ifc := range sys_interfaces {
+		if ifc.Name != "halo_local0" {
+			continue
+		}
 		if dnIf, ok = os.LookupEnv("HALO_LOCAL_IFACE"); !ok {
 			log.Fatal("Missing DN interface for HALO_LOCAL")
 		}
 		_, err := NewInterface(
-			OptionInterfaceUpper(haloIf),
+			OptionInterfaceUpper(ifc.Name),
 			OptionInterfaceLower(dnIf),
 			OptionInterfaceUpdateNetFlowId(client),
 		)
 		if err != nil {
 			log.Fatal("Failed to create local interface. Reason:", err)
 		}
+		break
 	}
 
 	var sample string
@@ -446,7 +455,17 @@ func (hal *DnHalImpl) InitInterfaces() {
 	}
 	hal.interfaces.UpdateInterval = time.Duration(interval * float64(time.Second))
 
-	for idx := 0; idx < HALO_INTERFACES_COUNT; idx++ {
+	for _, ifc := range sys_interfaces {
+		if !strings.HasPrefix(ifc.Name, "halo") {
+			continue
+		}
+		if strings.HasPrefix(ifc.Name, "halo_local") {
+			continue
+		}
+		var idx int
+		if _, err = fmt.Sscanf(ifc.Name, "halo%d", &idx); err != nil {
+			log.Warnf("failed to parse interface index %s. Skip it", ifc.Name)
+		}
 		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
 			dnIf = fmt.Sprintf("ge100-0/0/%d", idx)
 		}
