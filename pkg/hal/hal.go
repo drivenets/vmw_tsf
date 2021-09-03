@@ -1282,7 +1282,11 @@ func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t 
 			Network:  haloNet,
 		}
 		if err = AddSiInterface(SI_HALO_NAME, siIfc); err != nil {
-			log.Warningf("failed to add SI interface: %s", err)
+			log.Warnf("failed to add SI interface: %s", err)
+			return err
+		}
+		if err = AddInterfaceFlowMonitoring(ifc, FLOW_MONITORING_PROFILE, FLOW_MONITORING_TEMPLATE); err != nil {
+			log.Warnf("failed to add interface %s flow monitoring: %s", ifc, err)
 			return err
 		}
 	}
@@ -1320,6 +1324,8 @@ func MethodRsvpTunnelDelete(name string) netconf.RawMethod {
 }
 
 const SI_HALO_NAME = "halo"
+const FLOW_MONITORING_TEMPLATE = "halo"
+const FLOW_MONITORING_PROFILE = "halo"
 
 func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
 	if t != RSVP {
@@ -1341,7 +1347,11 @@ func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
 				if ifc == haloIfc.Physical {
 					log.Infof("found matching SI %s interface %s. Delete it from config", SI_HALO_NAME, ifc)
 					if err = DeleteSiInterface(SI_HALO_NAME, ifc); err != nil {
-						log.Infof("failed to delete si interface: %s", err)
+						log.Warnf("failed to delete si interface: %s", err)
+						return err
+					}
+					if err = DeleteInterfaceFlowMonitoring(ifc); err != nil {
+						log.Warnf("failed to delete interface %s flow monitoring: %s ", ifc, err)
 						return err
 					}
 				}
@@ -1660,4 +1670,84 @@ func GetMgmtClient() pb.ManagementClient {
 		mgmtClient = pb.NewManagementClient(grpcConn)
 	}
 	return mgmtClient
+}
+
+const interfaceFlowMonitoringDeleteXml = `
+<edit-config>
+  <target><candidate/></target>
+  <default-operation>none</default-operation>
+  <error-option>rollback-on-error</error-option>
+  <config xmlns:dn-top="http://drivenets.com/ns/yang/dn-top" xmlns:dn-interfaces="http://drivenets.com/ns/yang/dn-interfaces" xmlns:dn-srv-flow-monitoring="http://drivenets.com/ns/yang/dn-srv-flow-monitoring">
+  <dn-top:drivenets-top>
+    <dn-interfaces:interfaces>
+    <interface>
+      <name>{{.interface}}</name>
+      <dn-srv-flow-monitoring:flow-monitoring operation="delete"/>
+    </interface>
+    </dn-interfaces:interfaces>
+  </dn-top:drivenets-top>
+  </config>
+</edit-config>`
+
+func MethodInterfaceFlowMonitoringDelete(ifname string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(interfaceFlowMonitoringDeleteXml)).
+		Execute(body, map[string]interface{}{
+			"interface": ifname,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+func DeleteInterfaceFlowMonitoring(ifname string) error {
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodInterfaceFlowMonitoringDelete(ifname))
+	if err != nil {
+		return fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	return nil
+}
+
+const interfaceFlowMonitoringAddXml = `
+<edit-config>
+  <target><candidate/></target>
+  <default-operation>merge</default-operation>
+  <error-option>rollback-on-error</error-option>
+  <config xmlns:dn-top="http://drivenets.com/ns/yang/dn-top" xmlns:dn-interfaces="http://drivenets.com/ns/yang/dn-interfaces" xmlns:dn-srv-flow-monitoring="http://drivenets.com/ns/yang/dn-srv-flow-monitoring">
+    <dn-top:drivenets-top>
+      <dn-interfaces:interfaces>
+        <interface>
+          <dn-srv-flow-monitoring:flow-monitoring>
+            <config-items>
+              <halo-template>
+                <sampler-profile-name>{{.profile}}</sampler-profile-name>
+                <template-name>{{.template}}</template-name>
+                <direction>in</direction>
+              </halo-template>
+            </config-items>
+          </dn-srv-flow-monitoring:flow-monitoring>
+          <name>{{.interface}}</name>
+        </interface>
+      </dn-interfaces:interfaces>
+    </dn-top:drivenets-top>
+  </config>
+</edit-config>`
+
+func MethodInterfaceFlowMonitoringAdd(ifname string, profile string, tname string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(interfaceFlowMonitoringAddXml)).
+		Execute(body, map[string]interface{}{
+			"interface": ifname,
+			"profile":   profile,
+			"template":  tname,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+func AddInterfaceFlowMonitoring(ifname string, profile string, tname string) error {
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodInterfaceFlowMonitoringAdd(ifname, profile, tname))
+	if err != nil {
+		return fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	return nil
 }
