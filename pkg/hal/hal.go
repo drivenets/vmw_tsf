@@ -979,6 +979,7 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 	if err != nil {
 		return err
 	}
+	log.Info("steer xml: %s", xmlString)
 
 	_, err = session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
