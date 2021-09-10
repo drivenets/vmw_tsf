@@ -1281,13 +1281,17 @@ func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t 
 			Address:  haloAddr,
 			Network:  haloNet,
 		}
-		if err = AddSiInterface(SI_HALO_NAME, siIfc); err != nil {
-			log.Warnf("failed to add SI interface: %s", err)
-			return err
-		}
-		if err = AddInterfaceFlowMonitoring(ifc, FLOW_MONITORING_PROFILE, FLOW_MONITORING_TEMPLATE); err != nil {
-			log.Warnf("failed to add interface %s flow monitoring: %s", ifc, err)
-			return err
+		if _, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
+			log.Warnf("failed to get SI %s interfaces. Skip SI configuration", SI_HALO_NAME)
+		} else {
+			if err = AddSiInterface(SI_HALO_NAME, siIfc); err != nil {
+				log.Warnf("failed to add SI interface: %s", err)
+				return err
+			}
+			if err = AddInterfaceFlowMonitoring(ifc, FLOW_MONITORING_PROFILE, FLOW_MONITORING_TEMPLATE); err != nil {
+				log.Warnf("failed to add interface %s flow monitoring: %s", ifc, err)
+				return err
+			}
 		}
 	}
 	return commitChanges()
@@ -1341,7 +1345,7 @@ func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
 	}
 	if ifc, err := GetTunnelInterface(name, t); err == nil {
 		if iflist, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
-			log.Warnf("skip SI %s interface delete. Reason: %s", SI_HALO_NAME, err)
+			log.Warnf("failed to get SI %s interfaces. Skip SI configuration", SI_HALO_NAME)
 		} else {
 			for _, haloIfc := range iflist {
 				if ifc == haloIfc.Physical {

@@ -500,8 +500,7 @@ func handleTunnelAdd(h hal.DnHal) error {
 	if err != nil {
 		return err
 	}
-	h.AddTunnel(tunNameOpt, src, dst, hal.RSVP, haloAddr, *haloNet)
-	return nil
+	return h.AddTunnel(tunNameOpt, src, dst, hal.RSVP, haloAddr, *haloNet)
 }
 
 func handleTunnelDelete(h hal.DnHal) error {
@@ -513,8 +512,7 @@ func handleTunnelDelete(h hal.DnHal) error {
 		return fmt.Errorf("unsupported tunnel type: %s (try 'rsvp' instead)", tunTypeOpt)
 	}
 
-	h.DeleteTunnel(tunNameOpt, hal.RSVP)
-	return nil
+	return h.DeleteTunnel(tunNameOpt, hal.RSVP)
 }
 
 func handleInterfaceAddWan() error {

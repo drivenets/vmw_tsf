@@ -5,6 +5,15 @@ all: hal-client halo twamp hal-stats
 hal-client:
 	go build -o bin/hal-client cmd/client/main.go
 
+.PHONY: hal-client-in-docker
+hal-client-in-docker:
+	@DOCKER_BUILDKIT=1 \
+	docker build . \
+		--target bin \
+		--output bin/ \
+		--build-arg TOOL_NAME=hal-client \
+		--build-arg TOOL_MAIN=cmd/client/main.go
+
 .PHONY: halo
 halo:
 	go build -o bin/halo cmd/nop/main.go
@@ -13,9 +22,7 @@ halo:
 twamp:
 	go build -o bin/twamp cmd/twamp/main.go
 
-.PHONY: clean
-clean:
-	rm -f bin/*
+.PHONY:
 
 .PHONY: proto
 proto:
