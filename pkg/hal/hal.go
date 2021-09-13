@@ -85,8 +85,9 @@ type DnHalImpl struct {
 	mutex       sync.Mutex
 	initialized bool
 	initOptions struct {
-		flushSteer  bool
-		statsServer bool
+		flushSteer    bool
+		statsServer   bool
+		flowThreshold uint64
 	}
 	grpcAddr   string
 	interfaces struct {
@@ -126,6 +127,13 @@ func OptionHalFlushSteer() OptionHal {
 func OptionHalStatsServer() OptionHal {
 	return func(hal *DnHalImpl) error {
 		hal.initOptions.statsServer = true
+		return nil
+	}
+}
+
+func OptionHalFlowThreshold(threshold uint64) OptionHal {
+	return func(hal *DnHalImpl) error {
+		hal.initOptions.flowThreshold = threshold
 		return nil
 	}
 }
@@ -227,6 +235,11 @@ func (hal *DnHalImpl) Init() {
 	hal.aclRules = make(map[int]string)
 	hal.InitInterfaces()
 
+	if thr, ok := os.LookupEnv("HALO_FLOW_THRESHOLD"); ok {
+		if _, err := fmt.Sscanf(thr, "%d", &hal.initOptions.flowThreshold); err != nil {
+			log.Warnf("failed to parse flow threshold %s. Ignore it", thr)
+		}
+	}
 	if hal.initOptions.flushSteer {
 		err := SteeringAclCleanup()
 		if err != nil {
@@ -825,13 +838,17 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 		for _, agg := range aggregate {
 			stats := agg.ToTelemetry(now.Sub(prev))
 			dbg.Flow(agg.key, stats)
-			v(agg.key, stats)
+			if stats.RxRateBps >= hal.initOptions.flowThreshold || stats.TxRateBps >= hal.initOptions.flowThreshold {
+				v(agg.key, stats)
+			}
 		}
 		dbg.Print()
 	} else {
 		for _, agg := range aggregate {
 			stats := agg.ToTelemetry(now.Sub(prev))
-			v(agg.key, stats)
+			if stats.RxRateBps >= hal.initOptions.flowThreshold || stats.TxRateBps >= hal.initOptions.flowThreshold {
+				v(agg.key, stats)
+			}
 		}
 
 	}

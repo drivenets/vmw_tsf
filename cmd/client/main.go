@@ -41,6 +41,7 @@ var ifcLowerOpt string
 var ifcNextHopOpt string
 var ifcTwampOpt string
 var ifcNameOpt string
+var flowThreshold uint64
 
 func handleSteer(h hal.DnHal) {
 
@@ -606,6 +607,7 @@ func main() {
 			if serverOpt {
 				opts = append(opts, hal.OptionHalStatsServer())
 			}
+			opts = append(opts, hal.OptionHalFlowThreshold(flowThreshold))
 			h := hal.NewDnHal(opts...)
 			monitor(h)
 			return nil
@@ -617,6 +619,7 @@ func main() {
 	cmdMonitor.Flags().BoolVarP(&noTwampOpt, "notw", "w", false, "do not start twamp measurements")
 	cmdMonitor.Flags().BoolVarP(&noClsOpt, "nocls", "c", false, "do not clear screen")
 	cmdMonitor.Flags().BoolVarP(&serverOpt, "server", "s", false, "start stats/management server")
+	cmdMonitor.Flags().Uint64VarP(&flowThreshold, "threshold", "l", 0, "flow detection threshold (minimum rx or tx bandwidth)")
 	rootCmd.AddCommand(cmdMonitor)
 
 	cmdFlush := &cobra.Command{
@@ -662,6 +665,7 @@ func main() {
 			}
 			os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
 			opts := make([]hal.OptionHal, 0)
+			opts = append(opts, hal.OptionHalFlowThreshold(flowThreshold))
 			h := hal.NewDnHal(opts...)
 			batch(h)
 			return nil
@@ -673,6 +677,7 @@ func main() {
 	cmdBatch.Flags().BoolVarP(&noTwampOpt, "notw", "w", false, "do not start twamp measurements")
 	cmdBatch.Flags().IntVarP(&countOpt, "count", "c", 1, "how many intervals to run")
 	cmdBatch.Flags().BoolVarP(&accOpt, "accumulate", "a", false, "accumulate flow statistics in batch mode")
+	cmdBatch.Flags().Uint64VarP(&flowThreshold, "threshold", "l", 0, "flow detection threshold (minimum rx or tx bandwidth)")
 	rootCmd.AddCommand(cmdBatch)
 
 	cmdTunnel := &cobra.Command{
