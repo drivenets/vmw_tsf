@@ -3,6 +3,7 @@ package hal
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	pb "github.com/drivenets/vmw_tsf/pkg/hal/proto"
@@ -41,19 +42,24 @@ func (s *ManagementServer) AddLanInterface(_ context.Context, args *pb.AddLanInt
 	return &pb.Empty{}, nil
 }
 
-func parseTwampAddr(addr string) (string, string, error) {
+func parseTwampAddr(addr string) (string, uint16, error) {
 	var peer string
-	var port string
+	var port uint16
 	tokens := strings.Split(addr, ":")
 	switch len(tokens) {
 	case 0:
-		return "", "", fmt.Errorf("invalid twamp address: %s", addr)
+		return "", 0, fmt.Errorf("invalid twamp address: %s", addr)
 	case 1:
 		peer = tokens[0]
-		port = fmt.Sprintf("%d", DEFAULT_TWAMP_PORT)
+		port = DEFAULT_TWAMP_PORT
 	default:
 		peer = tokens[0]
-		port = tokens[1]
+		port64, err := strconv.ParseUint(tokens[1], 10, 16)
+		if err != nil {
+			log.Error("Failed to parse TWAMP port %d", port)
+			return "", 0, err
+		}
+		port = uint16(port64)
 	}
 	return peer, port, nil
 }

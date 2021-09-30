@@ -41,7 +41,7 @@ var ifcLowerOpt string
 var ifcNextHopOpt string
 var ifcTwampOpt string
 var ifcNameOpt string
-var flowThreshold uint64
+var flowThreshold uint64 = hal.DEFAULT_FLOW_THRESHOLD
 
 func handleSteer(h hal.DnHal) {
 
@@ -603,10 +603,9 @@ func main() {
 				os.Setenv("SKIP_TWAMP", "1")
 			}
 			os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
-			opts := make([]hal.OptionHal, 0)
-			if serverOpt {
-				opts = append(opts, hal.OptionHalStatsServer())
-			}
+			opts := make([]hal.OptionHal, 0, 3)
+			opts = append(opts, hal.OptionHalFlushSteer(false))
+			opts = append(opts, hal.OptionHalStatsServer(serverOpt))
 			opts = append(opts, hal.OptionHalFlowThreshold(flowThreshold))
 			h := hal.NewDnHal(opts...)
 			monitor(h)
@@ -619,7 +618,7 @@ func main() {
 	cmdMonitor.Flags().BoolVarP(&noTwampOpt, "notw", "w", false, "do not start twamp measurements")
 	cmdMonitor.Flags().BoolVarP(&noClsOpt, "nocls", "c", false, "do not clear screen")
 	cmdMonitor.Flags().BoolVarP(&serverOpt, "server", "s", false, "start stats/management server")
-	cmdMonitor.Flags().Uint64VarP(&flowThreshold, "threshold", "l", 0, "flow detection threshold (minimum rx or tx bandwidth)")
+	cmdMonitor.Flags().Uint64VarP(&flowThreshold, "threshold", "l", hal.DEFAULT_FLOW_THRESHOLD, "flow detection threshold (minimum rx or tx bandwidth)")
 	rootCmd.AddCommand(cmdMonitor)
 
 	cmdFlush := &cobra.Command{
@@ -628,8 +627,9 @@ func main() {
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			os.Setenv("SKIP_TWAMP", "1")
-			opts := make([]hal.OptionHal, 0, 1)
-			opts = append(opts, hal.OptionHalFlushSteer())
+			opts := make([]hal.OptionHal, 0, 2)
+			opts = append(opts, hal.OptionHalFlushSteer(true))
+			opts = append(opts, hal.OptionHalStatsServer(false))
 			hal.NewDnHal(opts...)
 		},
 	}
@@ -641,7 +641,9 @@ func main() {
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			os.Setenv("SKIP_TWAMP", "1")
-			opts := make([]hal.OptionHal, 0)
+			opts := make([]hal.OptionHal, 0, 2)
+			opts = append(opts, hal.OptionHalFlushSteer(false))
+			opts = append(opts, hal.OptionHalStatsServer(false))
 			h := hal.NewDnHal(opts...)
 			handleSteer(h)
 		},
@@ -664,7 +666,9 @@ func main() {
 				os.Setenv("SKIP_TWAMP", "1")
 			}
 			os.Setenv("IFC_SAMPLE", strconv.FormatFloat(monInterval, 'f', 3, 64))
-			opts := make([]hal.OptionHal, 0)
+			opts := make([]hal.OptionHal, 0, 3)
+			opts = append(opts, hal.OptionHalFlushSteer(false))
+			opts = append(opts, hal.OptionHalStatsServer(false))
 			opts = append(opts, hal.OptionHalFlowThreshold(flowThreshold))
 			h := hal.NewDnHal(opts...)
 			batch(h)
@@ -677,7 +681,7 @@ func main() {
 	cmdBatch.Flags().BoolVarP(&noTwampOpt, "notw", "w", false, "do not start twamp measurements")
 	cmdBatch.Flags().IntVarP(&countOpt, "count", "c", 1, "how many intervals to run")
 	cmdBatch.Flags().BoolVarP(&accOpt, "accumulate", "a", false, "accumulate flow statistics in batch mode")
-	cmdBatch.Flags().Uint64VarP(&flowThreshold, "threshold", "l", 0, "flow detection threshold (minimum rx or tx bandwidth)")
+	cmdBatch.Flags().Uint64VarP(&flowThreshold, "threshold", "l", hal.DEFAULT_FLOW_THRESHOLD, "flow detection threshold (minimum rx or tx bandwidth)")
 	rootCmd.AddCommand(cmdBatch)
 
 	cmdTunnel := &cobra.Command{
@@ -691,7 +695,9 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			os.Setenv("SKIP_TWAMP", "1")
-			opts := make([]hal.OptionHal, 0)
+			opts := make([]hal.OptionHal, 0, 2)
+			opts = append(opts, hal.OptionHalFlushSteer(false))
+			opts = append(opts, hal.OptionHalStatsServer(false))
 			h := hal.NewDnHal(opts...)
 			return handleTunnelAdd(h)
 		},
@@ -712,7 +718,9 @@ func main() {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			os.Setenv("SKIP_TWAMP", "1")
-			opts := make([]hal.OptionHal, 0)
+			opts := make([]hal.OptionHal, 0, 2)
+			opts = append(opts, hal.OptionHalFlushSteer(false))
+			opts = append(opts, hal.OptionHalStatsServer(false))
 			h := hal.NewDnHal(opts...)
 			return handleTunnelDelete(h)
 		},

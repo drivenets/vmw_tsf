@@ -110,15 +110,15 @@ func checkAcceptStatus(accept int, context string) error {
 	case OK:
 		return nil
 	case Failed:
-		return errors.New(fmt.Sprintf("ERROR: The ", context, " failed."))
+		return errors.New(fmt.Sprint("ERROR: The ", context, " failed."))
 	case InternalError:
-		return errors.New(fmt.Sprintf("ERROR: The ", context, " failed: internal error."))
+		return errors.New(fmt.Sprint("ERROR: The ", context, " failed: internal error."))
 	case NotSupported:
-		return errors.New(fmt.Sprintf("ERROR: The ", context, " failed: not supported."))
+		return errors.New(fmt.Sprint("ERROR: The ", context, " failed: not supported."))
 	case PermanentResourceLimitation:
-		return errors.New(fmt.Sprintf("ERROR: The ", context, " failed: permanent resource limitation."))
+		return errors.New(fmt.Sprint("ERROR: The ", context, " failed: permanent resource limitation."))
 	case TemporaryResourceLimitation:
-		return errors.New(fmt.Sprintf("ERROR: The ", context, " failed: temporary resource limitation."))
+		return errors.New(fmt.Sprint("ERROR: The ", context, " failed: temporary resource limitation."))
 	}
 	return nil
 }

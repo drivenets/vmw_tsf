@@ -20,7 +20,6 @@ import (
 	"google.golang.org/grpc"
 
 	"os"
-	"strconv"
 	"sync"
 	"text/template"
 	"time"
@@ -84,13 +83,8 @@ type Interface struct {
 type DnHalImpl struct {
 	mutex       sync.Mutex
 	initialized bool
-	initOptions struct {
-		flushSteer    bool
-		statsServer   bool
-		flowThreshold uint64
-	}
-	grpcAddr   string
-	interfaces struct {
+	grpcAddr    string
+	interfaces  struct {
 		UpdateInterval time.Duration
 		Map            struct {
 			Lock        sync.RWMutex
@@ -110,49 +104,69 @@ type DnHalImpl struct {
 		aggregate map[string]*FlowAggregate
 	}
 	aclRules map[int]string
-	debug    bool
+	config   HalCfg
 }
 
 var hal = &DnHalImpl{}
 
 type OptionHal func(*DnHalImpl) error
 
-func OptionHalFlushSteer() OptionHal {
+func OptionHalFlushSteer(opt bool) OptionHal {
 	return func(hal *DnHalImpl) error {
-		hal.initOptions.flushSteer = true
+		hal.config.FlushSteer = opt
 		return nil
 	}
 }
 
-func OptionHalStatsServer() OptionHal {
+func OptionHalStatsServer(opt bool) OptionHal {
 	return func(hal *DnHalImpl) error {
-		hal.initOptions.statsServer = true
+		hal.config.StatsServer = opt
 		return nil
 	}
 }
 
 func OptionHalFlowThreshold(threshold uint64) OptionHal {
 	return func(hal *DnHalImpl) error {
-		hal.initOptions.flowThreshold = threshold
+		hal.config.FlowThreshold = threshold
 		return nil
 	}
 }
 
+func (hal *DnHalImpl) UpdateUpperByMac() {
+	ifs, err := net.Interfaces()
+	if err != nil {
+		log.Fatalf("Failed to get local interfaces. Reason: %v", err)
+	}
+	mac2IfName := make(map[string]string)
+	for _, ifc := range ifs {
+		mac2IfName[ifc.HardwareAddr.String()] = ifc.Name
+	}
+	for idx, ifc := range hal.config.Wan {
+		if len(ifc.HwAddr) == 0 {
+			continue
+		}
+		if name, ok := mac2IfName[ifc.HwAddr]; ok {
+			hal.config.Wan[idx].Upper = name
+		}
+	}
+}
+
 func NewDnHal(options ...OptionHal) DnHal {
+	if hal.initialized {
+		return hal
+	}
+	hal.LoadConfig()
+	hal.UpdateUpperByMac()
 	for _, op := range options {
 		err := op(hal)
 		if err != nil {
 			log.Fatalf("Failed to setup HAL instance. Reason: %v", err)
 		}
 	}
-
-	if !hal.initialized {
-		hal.Init()
-	}
+	hal.LogConfig()
+	hal.Init()
 	return hal
 }
-
-const DRIVENETS_DNOS_ADDR = "localhost"
 
 func (hal *DnHalImpl) InitFlows() {
 	hal.flows.state = &gfu.StateNetFlow{
@@ -220,27 +234,19 @@ func (hal *DnHalImpl) InitNetConf() {
 }
 
 func (hal *DnHalImpl) Init() {
-	if _, ok := os.LookupEnv("DEBUG"); ok {
+
+	if hal.config.Debug {
 		log.SetLevel(log.DebugLevel)
-		hal.debug = true
 	}
+
 	hal.mutex.Lock()
 	defer hal.mutex.Unlock()
 
-	var ok bool
-	if hal.grpcAddr, ok = os.LookupEnv("DNOS_ADDR"); !ok {
-		hal.grpcAddr = DRIVENETS_DNOS_ADDR
-	}
-	hal.grpcAddr = hal.grpcAddr + ":50051"
+	hal.grpcAddr = hal.config.DnosAddr + ":50051"
 	hal.aclRules = make(map[int]string)
 	hal.InitInterfaces()
 
-	if thr, ok := os.LookupEnv("HALO_FLOW_THRESHOLD"); ok {
-		if _, err := fmt.Sscanf(thr, "%d", &hal.initOptions.flowThreshold); err != nil {
-			log.Warnf("failed to parse flow threshold %s. Ignore it", thr)
-		}
-	}
-	if hal.initOptions.flushSteer {
+	if hal.config.FlushSteer {
 		err := SteeringAclCleanup()
 		if err != nil {
 			log.Errorf("Failed to cleanup old access lists. Reason: %v", err)
@@ -255,7 +261,7 @@ func (hal *DnHalImpl) Init() {
 
 	hal.initialized = true
 
-	if hal.initOptions.statsServer {
+	if hal.config.StatsServer {
 		go statsServer(hal)
 	}
 }
@@ -305,18 +311,10 @@ func OptionInterfaceNextHop(nh string) OptionInterface {
 	}
 }
 
-func OptionInterfaceTwamp(peer string, port string) func(*Interface) error {
+func OptionInterfaceTwamp(peer string, port uint16) func(*Interface) error {
 	return func(ifc *Interface) error {
-		var port64 uint64
-		port64, err := strconv.ParseUint(port, 10, 16)
-		if err != nil {
-			log.Error("Failed to parse TWAMP port %d", port)
-			return err
-		}
-		port16 := uint16(port64)
-
 		ifc.Twamp.Peer = peer
-		ifc.Twamp.Port = port16
+		ifc.Twamp.Port = port
 		return nil
 	}
 }
@@ -415,12 +413,6 @@ func RemoveInterface(upper string) error {
 }
 
 func (hal *DnHalImpl) InitInterfaces() {
-	var haloIf string
-	var dnIf string
-	var peer string
-	var port string
-	var ok bool
-
 	hal.interfaces.Map.UpperSorted.Lan = make([]string, 0)
 	hal.interfaces.Map.UpperSorted.Wan = make([]string, 0)
 	hal.interfaces.Map.Upper2Interface = make(map[string]*Interface)
@@ -441,15 +433,15 @@ func (hal *DnHalImpl) InitInterfaces() {
 	}
 
 	for _, ifc := range sys_interfaces {
-		if ifc.Name != "halo_local0" {
+		if ifc.Name != hal.config.Lan.Upper {
 			continue
 		}
-		if dnIf, ok = os.LookupEnv("HALO_LOCAL_IFACE"); !ok {
+		if len(hal.config.Lan.Lower) == 0 {
 			log.Fatal("Missing DN interface for HALO_LOCAL")
 		}
 		_, err := NewInterface(
 			OptionInterfaceUpper(ifc.Name),
-			OptionInterfaceLower(dnIf),
+			OptionInterfaceLower(hal.config.Lan.Lower),
 			OptionInterfaceUpdateNetFlowId(client),
 		)
 		if err != nil {
@@ -458,55 +450,26 @@ func (hal *DnHalImpl) InitInterfaces() {
 		break
 	}
 
-	var sample string
-	var interval float64 = 1
-	if sample, ok = os.LookupEnv("IFC_SAMPLE"); ok {
-		var err error
-		if interval, err = strconv.ParseFloat(sample, 64); err != nil {
-			log.Fatalf("Failed to parse interface sampling interval: %v", interval)
-		}
-	}
-	hal.interfaces.UpdateInterval = time.Duration(interval * float64(time.Second))
+	hal.interfaces.UpdateInterval = time.Duration(hal.config.IfcSamplingInterval * float64(time.Second))
 
 	for _, ifc := range sys_interfaces {
-		if !strings.HasPrefix(ifc.Name, "halo") {
-			continue
-		}
-		if strings.HasPrefix(ifc.Name, "halo_local") {
-			continue
-		}
-		var idx int
-		if _, err = fmt.Sscanf(ifc.Name, "halo%d", &idx); err != nil {
-			log.Warnf("failed to parse interface index %s. Skip it", ifc.Name)
-		}
-		if dnIf, ok = os.LookupEnv(fmt.Sprintf("HALO%d_IFACE", idx)); !ok {
-			dnIf = fmt.Sprintf("ge100-0/0/%d", idx)
-		}
-
-		var nextHop1 string
-		if nextHop1, ok = os.LookupEnv(fmt.Sprintf("HALO%d_NEXT_HOP", idx)); !ok {
-			log.Fatalf("Can not find nexthop in HALO%d_IFACE", idx)
-		}
-
-		if peer, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP", idx)); !ok {
-			peer = "0.0.0.0:862"
-			log.Error("Failed to get TWAMP server for: ", dnIf)
-		}
-		if port, ok = os.LookupEnv(fmt.Sprintf("HALO%d_TWAMP_PORT", idx)); !ok {
-			port = "10001"
-			log.Error("Failed to get TWAMP server UDP ports for: ", dnIf)
-		}
-
-		haloIf = fmt.Sprintf("halo%d", idx)
-		_, err := NewInterface(
-			OptionInterfaceUpper(haloIf),
-			OptionInterfaceLower(dnIf),
-			OptionInterfaceTwamp(peer, port),
-			OptionInterfaceNextHop(nextHop1),
-			OptionInterfaceUpdateNetFlowId(client),
-		)
-		if err != nil {
-			log.Fatal("Failed to create interface. Reason:", err)
+		for _, cfg := range hal.config.Wan {
+			if cfg.Upper != ifc.Name {
+				continue
+			}
+			_, err := NewInterface(
+				OptionInterfaceUpper(cfg.Upper),
+				OptionInterfaceLower(cfg.Lower),
+				OptionInterfaceTwamp(
+					hal.config.Topo.Twamp[cfg.Ipv4Addr].Host,
+					hal.config.Topo.Twamp[cfg.Ipv4Addr].Port),
+				OptionInterfaceNextHop(
+					hal.config.Topo.NextHop[cfg.Ipv4Addr]),
+				OptionInterfaceUpdateNetFlowId(client),
+			)
+			if err != nil {
+				log.Fatal("Failed to create interface. Reason:", err)
+			}
 		}
 	}
 }
@@ -657,15 +620,8 @@ func monitorInterfaces() {
 
 	twampTests := make(map[string]*twamp.TwampTest)
 
-	var ok bool
-	var skipTwamp string
 	var twampConn *twamp.TwampConnection
-	if skipTwamp, ok = os.LookupEnv("SKIP_TWAMP"); !ok {
-		skipTwamp = "0"
-	}
-
-	if skipTwamp != "1" {
-
+	if !hal.config.SkipTwamp {
 		for _, ifc := range copyWanInterfaces() {
 			twampClient := twamp.NewClient()
 			twampConn, err = twampClient.Connect(ifc.Twamp.Peer)
@@ -720,7 +676,7 @@ func monitorInterfaces() {
 				ifc.Stats.TxBps = u.Stats.TxBps
 			}
 		case <-djt.C:
-			if skipTwamp != "1" {
+			if !hal.config.SkipTwamp {
 				for upper, tt := range twampTests {
 					results := tt.RunX(5)
 					updateInterfaceDelayJitter(upper,
@@ -833,12 +789,12 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 
 	now, prev := time.Now(), hal.flows.start
 	hal.flows.start = now
-	if hal.debug {
+	if hal.config.Debug {
 		dbg := NewFlowsDebugger()
 		for _, agg := range aggregate {
 			stats := agg.ToTelemetry(now.Sub(prev))
 			dbg.Flow(agg.key, stats)
-			if stats.RxRateBps >= hal.initOptions.flowThreshold || stats.TxRateBps >= hal.initOptions.flowThreshold {
+			if stats.RxRateBps >= hal.config.FlowThreshold || stats.TxRateBps >= hal.config.FlowThreshold {
 				v(agg.key, stats)
 			}
 		}
@@ -846,7 +802,7 @@ func (*DnHalImpl) GetFlows(v FlowVisitor) error {
 	} else {
 		for _, agg := range aggregate {
 			stats := agg.ToTelemetry(now.Sub(prev))
-			if stats.RxRateBps >= hal.initOptions.flowThreshold || stats.TxRateBps >= hal.initOptions.flowThreshold {
+			if stats.RxRateBps >= hal.config.FlowThreshold || stats.TxRateBps >= hal.config.FlowThreshold {
 				v(agg.key, stats)
 			}
 		}
@@ -1180,23 +1136,15 @@ var netconfSession *netconf.Session
 
 func NetConfConnector() *netconf.Session {
 	var err error
-	var ok bool
 
-	if _, ok = os.LookupEnv("DEBUG"); ok {
+	if hal.config.Debug {
 		defaultLog := stdLog.New(os.Stderr, "netconf ", 1)
 		netconf.SetLog(netconf.NewStdLog(defaultLog, netconf.LogDebug))
 	}
 
-	if nc.netconfUser, ok = os.LookupEnv("NETCONF_USER"); !ok {
-		nc.netconfUser = "dnroot"
-	}
-	if nc.netconfPassword, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
-		nc.netconfPassword = "dnroot"
-	}
-	if nc.netconfHost, ok = os.LookupEnv("DNOS_ADDR"); !ok {
-		nc.netconfHost = DRIVENETS_DNOS_ADDR
-	}
-
+	nc.netconfUser = hal.config.Netconf.User
+	nc.netconfPassword = hal.config.Netconf.Password
+	nc.netconfHost = hal.config.DnosAddr
 	if netconfSession == nil {
 		sshConfig := &ssh.ClientConfig{
 			User:            nc.netconfUser,
@@ -1283,6 +1231,24 @@ func MethodRsvpTunnelAdd(name string, source net.IP, destination net.IP) netconf
 	return netconf.RawMethod(body.String())
 }
 
+func NewSiName(ifs []SiInterface) string {
+	names := make(map[int]bool, len(ifs))
+	for _, ifc := range ifs {
+		var idx int
+		if n, err := fmt.Sscanf(ifc.Name, "halo%d", &idx); err != nil || n != 1 {
+			log.Warnf("failed to extract index from SI interface name %s", ifc.Name)
+			continue
+		}
+		names[idx] = true
+	}
+	for idx := 0; idx <= len(ifs); idx++ {
+		if _, ok := names[idx]; !ok {
+			return fmt.Sprint("halo", idx)
+		}
+	}
+	return fmt.Sprint("halo", len(ifs))
+}
+
 func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t TunnelType, haloAddr net.IP, haloNet net.IPNet) error {
 	if t != RSVP {
 		return fmt.Errorf("ERROR: Failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
@@ -1294,14 +1260,16 @@ func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t 
 		return fmt.Errorf("reply: %v, error: %s", reply, err)
 	}
 	if ifc, err := GetTunnelInterface(name, t); err == nil {
-		siIfc := SiInterface{
-			Physical: ifc,
-			Address:  haloAddr,
-			Network:  haloNet,
-		}
-		if _, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
-			log.Warnf("failed to get SI %s interfaces. Skip SI configuration", SI_HALO_NAME)
+		if ifs, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
+			log.Warnf("failed to get SI %s interfaces. Skip SI configuration. Reason: %v", SI_HALO_NAME, err)
 		} else {
+			name := NewSiName(ifs)
+			siIfc := SiInterface{
+				Physical: ifc,
+				Name:     name,
+				Address:  haloAddr,
+				Network:  haloNet,
+			}
 			if err = AddSiInterface(SI_HALO_NAME, siIfc); err != nil {
 				log.Warnf("failed to add SI interface: %s", err)
 				return err
@@ -1414,7 +1382,7 @@ func MethodRsvpTunnelGetExplicitPath(name string) netconf.RawMethod {
 
 func GetTunnelInterface(name string, t TunnelType) (string, error) {
 	if t != RSVP {
-		return "", fmt.Errorf("ERROR: Failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
+		return "", fmt.Errorf("ERROR: Failed to get tunnel interface %v. Reason: tunnel type %v is not supported", name, t)
 	}
 
 	session := NetConfConnector()
@@ -1537,13 +1505,15 @@ func MethodServiceInstanceInterfacesGet(name string) netconf.RawMethod {
 
 type SiInterface struct {
 	Physical string
+	Name     string
 	Address  net.IP
 	Network  net.IPNet
 }
 
 type siInterfaceCfg struct {
-	Name string `xml:"interface-name"`
-	Addr string `xml:"ipv4-address"`
+	Name   string `xml:"interface-name"`
+	SiName string `xml:"si-interface-name"`
+	Addr   string `xml:"ipv4-address"`
 }
 
 func GetServiceInstanceInterfaces(name string) ([]SiInterface, error) {
@@ -1568,10 +1538,14 @@ func GetServiceInstanceInterfaces(name string) ([]SiInterface, error) {
 				if err = d.DecodeElement(&cfg, &ty); err != nil {
 					return nil, fmt.Errorf("invalid item: %s", err)
 				}
+				if len(cfg.Addr) == 0 {
+					continue
+				}
 				if addr, network, err := net.ParseCIDR(cfg.Addr); err != nil {
 					return nil, fmt.Errorf("invalid address: %s", cfg.Addr)
 				} else {
 					ifc = append(ifc, SiInterface{
+						Name:     cfg.SiName,
 						Physical: cfg.Name,
 						Address:  addr,
 						Network:  *network,
@@ -1643,6 +1617,7 @@ const siInterfaceAddXml = `
               <interfaces>
                 <interface>
                   <interface-name>{{.interface}}</interface-name>
+                  <si-interface-name>{{.siInterface}}</si-interface-name>
 				  <ipv4-address>{{.address}}</ipv4-address>
                 </interface>
               </interfaces>
@@ -1654,13 +1629,14 @@ const siInterfaceAddXml = `
   </config>
 </edit-config>`
 
-func MethodSiInterfaceAdd(name string, ifname string, address string) netconf.RawMethod {
+func MethodSiInterfaceAdd(name string, ifname string, siIfname string, address string) netconf.RawMethod {
 	body := &bytes.Buffer{}
 	template.Must(template.New("").Parse(siInterfaceAddXml)).
 		Execute(body, map[string]interface{}{
-			"name":      name,
-			"interface": ifname,
-			"address":   address,
+			"name":        name,
+			"interface":   ifname,
+			"siInterface": siIfname,
+			"address":     address,
 		})
 	return netconf.RawMethod(body.String())
 }
@@ -1668,7 +1644,8 @@ func MethodSiInterfaceAdd(name string, ifname string, address string) netconf.Ra
 func AddSiInterface(name string, ifc SiInterface) error {
 	session := NetConfConnector()
 	plen, _ := ifc.Network.Mask.Size()
-	reply, err := session.Exec(MethodSiInterfaceAdd(name, ifc.Physical,
+	reply, err := session.Exec(MethodSiInterfaceAdd(
+		name, ifc.Physical, ifc.Name,
 		fmt.Sprintf("%s/%d", ifc.Address, plen)))
 	if err != nil {
 		return fmt.Errorf("reply: %v, error: %s", reply, err)
@@ -1676,18 +1653,62 @@ func AddSiInterface(name string, ifc SiInterface) error {
 	return nil
 }
 
+const siEnvironmentAddXml = `
+<edit-config>
+  <target><candidate/></target>
+  <default-operation>merge</default-operation>
+  <error-option>rollback-on-error</error-option>
+  <config xmlns:dn-hyper-instances="http://drivenets.com/ns/yang/dn-hyper-instances" xmlns:dn-top="http://drivenets.com/ns/yang/dn-top" xmlns:dn-hyper-service-instances="http://drivenets.com/ns/yang/dn-hyper-service-instances">
+    <dn-top:drivenets-top>
+      <dn-hyper-service-instances:service-instances>
+        <dn-hyper-instances:instances>
+          <instance>
+			<si-name>{{.name}}</si-name>
+            <config-items>
+              <environments>
+                <environment>
+                  <entry>{{.entry}}</entry>
+                </environment>
+              </environments>
+            </config-items>
+          </instance>
+        </dn-hyper-instances:instances>
+      </dn-hyper-service-instances:service-instances>
+    </dn-top:drivenets-top>
+  </config>
+</edit-config>`
+
+func MethodSiEnvironmentAdd(name string, entry string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(siEnvironmentAddXml)).
+		Execute(body, map[string]interface{}{
+			"name": name,
+		})
+	return netconf.RawMethod(body.String())
+}
+
+func AddSiEnvironment(name string, env []string) error {
+	session := NetConfConnector()
+	for _, entry := range env {
+		reply, err := session.Exec(MethodSiEnvironmentAdd(name, entry))
+		if err != nil {
+			return fmt.Errorf("reply: %v, error: %s", reply, err)
+		}
+	}
+	return nil
+}
+
 var grpcConn *grpc.ClientConn
 var mgmtClient pb.ManagementClient
-
-const GRPC_MANAGEMENT_URL = "localhost:7732"
 
 func GetMgmtClient() pb.ManagementClient {
 	var err error
 	if grpcConn == nil {
 		ctx, _ := context.WithTimeout(context.Background(), time.Duration(1)*time.Second)
-		grpcConn, err = grpc.DialContext(ctx, GRPC_MANAGEMENT_URL, grpc.WithInsecure())
+		grpcAddr := fmt.Sprintf("%s:7732", hal.config.DnosAddr)
+		grpcConn, err = grpc.DialContext(ctx, grpcAddr, grpc.WithInsecure())
 		if err != nil {
-			log.Errorf("Failed to connect to %s. Reason: %v", GRPC_MANAGEMENT_URL, err)
+			log.Errorf("Failed to connect to %s. Reason: %v", grpcAddr, err)
 		}
 		mgmtClient = pb.NewManagementClient(grpcConn)
 	}

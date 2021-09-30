@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -39,13 +38,9 @@ type DnCredentials struct {
 }
 
 func NewDnCredentials() DnCredentials {
-	var ok bool
-	dnc := DnCredentials{}
-	if dnc.user, ok = os.LookupEnv("NETCONF_USER"); !ok {
-		dnc.user = "dnroot"
-	}
-	if dnc.password, ok = os.LookupEnv("NETCONF_PASSWORD"); !ok {
-		dnc.password = "dnroot"
+	dnc := DnCredentials{
+		user:     hal.config.Netconf.User,
+		password: hal.config.Netconf.Password,
 	}
 	return dnc
 }
