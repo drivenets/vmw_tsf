@@ -698,6 +698,7 @@ func main() {
 			opts := make([]hal.OptionHal, 0, 2)
 			opts = append(opts, hal.OptionHalFlushSteer(false))
 			opts = append(opts, hal.OptionHalStatsServer(false))
+			opts = append(opts, hal.OptionHalConfigRequired(false))
 			h := hal.NewDnHal(opts...)
 			return handleTunnelAdd(h)
 		},
@@ -721,6 +722,7 @@ func main() {
 			opts := make([]hal.OptionHal, 0, 2)
 			opts = append(opts, hal.OptionHalFlushSteer(false))
 			opts = append(opts, hal.OptionHalStatsServer(false))
+			opts = append(opts, hal.OptionHalConfigRequired(false))
 			h := hal.NewDnHal(opts...)
 			return handleTunnelDelete(h)
 		},

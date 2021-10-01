@@ -1,6 +1,7 @@
 package hal
 
 import (
+	"os"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -80,8 +81,20 @@ func (hal *DnHalImpl) LoadConfig() {
 	viper.SetDefault("Netconf.Password", "dnroot")
 	err := viper.ReadInConfig()
 	if err != nil {
-		panic(err)
+		if configRequired {
+			panic(err)
+		} else {
+			log.Warn("Failed to load config file:", viper.ConfigFileUsed())
+		}
 	}
+
+	/* Override GRPC address with DNOS_ADDR environment variable
+	 */
+	var ok bool
+	if hal.config.DnosAddr, ok = os.LookupEnv("DNOS_ADDR"); ok {
+		log.Info("Load DNOS_ADDR from environment:", hal.config.DnosAddr)
+	}
+
 	viper.Unmarshal(&hal.config)
 	hal.WorkaroundViperDictDotKeyIssue()
 }

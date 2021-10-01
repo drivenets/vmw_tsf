@@ -155,6 +155,15 @@ func NewDnHal(options ...OptionHal) DnHal {
 	if hal.initialized {
 		return hal
 	}
+	/* Need to run options before *and* after LoadConfig()
+	   as they may impact loading of the config file
+	*/
+	for _, op := range options {
+		err := op(hal)
+		if err != nil {
+			log.Fatalf("Failed to setup HAL instance. Reason: %v", err)
+		}
+	}
 	hal.LoadConfig()
 	hal.UpdateUpperByMac()
 	for _, op := range options {
@@ -1793,4 +1802,14 @@ func AddInterfaceFlowMonitoring(ifname string, profile string, tname string) err
 		return fmt.Errorf("reply: %v, error: %s", reply, err)
 	}
 	return nil
+}
+
+var configRequired bool = true
+
+func OptionHalConfigRequired(opt bool) OptionHal {
+	return func(hal *DnHalImpl) error {
+		log.Info("set: config required", opt)
+		configRequired = opt
+		return nil
+	}
 }
