@@ -1240,24 +1240,6 @@ func MethodRsvpTunnelAdd(name string, source net.IP, destination net.IP) netconf
 	return netconf.RawMethod(body.String())
 }
 
-func NewSiName(ifs []SiInterface) string {
-	names := make(map[int]bool, len(ifs))
-	for _, ifc := range ifs {
-		var idx int
-		if n, err := fmt.Sscanf(ifc.Name, "halo%d", &idx); err != nil || n != 1 {
-			log.Warnf("failed to extract index from SI interface name %s", ifc.Name)
-			continue
-		}
-		names[idx] = true
-	}
-	for idx := 0; idx <= len(ifs); idx++ {
-		if _, ok := names[idx]; !ok {
-			return fmt.Sprint("halo", idx)
-		}
-	}
-	return fmt.Sprint("halo", len(ifs))
-}
-
 func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t TunnelType, haloAddr net.IP, haloNet net.IPNet) error {
 	if t != RSVP {
 		return fmt.Errorf("ERROR: Failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
@@ -1269,24 +1251,18 @@ func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t 
 		return fmt.Errorf("reply: %v, error: %s", reply, err)
 	}
 	if ifc, err := GetTunnelInterface(name, t); err == nil {
-		if ifs, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
-			log.Warnf("failed to get SI %s interfaces. Skip SI configuration. Reason: %v", SI_HALO_NAME, err)
-		} else {
-			name := NewSiName(ifs)
-			siIfc := SiInterface{
-				Physical: ifc,
-				Name:     name,
-				Address:  haloAddr,
-				Network:  haloNet,
-			}
-			if err = AddSiInterface(SI_HALO_NAME, siIfc); err != nil {
-				log.Warnf("failed to add SI interface: %s", err)
-				return err
-			}
-			if err = AddInterfaceFlowMonitoring(ifc, FLOW_MONITORING_PROFILE, FLOW_MONITORING_TEMPLATE); err != nil {
-				log.Warnf("failed to add interface %s flow monitoring: %s", ifc, err)
-				return err
-			}
+		siIfc := SiInterface{
+			Physical: ifc,
+			Address:  haloAddr,
+			Network:  haloNet,
+		}
+		if err = AddSiInterface(SI_HALO_NAME, siIfc); err != nil {
+			log.Warnf("failed to add SI interface: %s", err)
+			return err
+		}
+		if err = AddInterfaceFlowMonitoring(ifc, FLOW_MONITORING_PROFILE, FLOW_MONITORING_TEMPLATE); err != nil {
+			log.Warnf("failed to add interface %s flow monitoring: %s", ifc, err)
+			return err
 		}
 	}
 	return commitChanges()
@@ -1514,7 +1490,6 @@ func MethodServiceInstanceInterfacesGet(name string) netconf.RawMethod {
 
 type SiInterface struct {
 	Physical string
-	Name     string
 	Address  net.IP
 	Network  net.IPNet
 }
@@ -1554,7 +1529,6 @@ func GetServiceInstanceInterfaces(name string) ([]SiInterface, error) {
 					return nil, fmt.Errorf("invalid address: %s", cfg.Addr)
 				} else {
 					ifc = append(ifc, SiInterface{
-						Name:     cfg.SiName,
 						Physical: cfg.Name,
 						Address:  addr,
 						Network:  *network,
@@ -1626,7 +1600,6 @@ const siInterfaceAddXml = `
               <interfaces>
                 <interface>
                   <interface-name>{{.interface}}</interface-name>
-                  <si-interface-name>{{.siInterface}}</si-interface-name>
 				  <ipv4-address>{{.address}}</ipv4-address>
                 </interface>
               </interfaces>
@@ -1638,14 +1611,13 @@ const siInterfaceAddXml = `
   </config>
 </edit-config>`
 
-func MethodSiInterfaceAdd(name string, ifname string, siIfname string, address string) netconf.RawMethod {
+func MethodSiInterfaceAdd(name string, ifname string, address string) netconf.RawMethod {
 	body := &bytes.Buffer{}
 	template.Must(template.New("").Parse(siInterfaceAddXml)).
 		Execute(body, map[string]interface{}{
-			"name":        name,
-			"interface":   ifname,
-			"siInterface": siIfname,
-			"address":     address,
+			"name":      name,
+			"interface": ifname,
+			"address":   address,
 		})
 	return netconf.RawMethod(body.String())
 }
@@ -1654,7 +1626,7 @@ func AddSiInterface(name string, ifc SiInterface) error {
 	session := NetConfConnector()
 	plen, _ := ifc.Network.Mask.Size()
 	reply, err := session.Exec(MethodSiInterfaceAdd(
-		name, ifc.Physical, ifc.Name,
+		name, ifc.Physical,
 		fmt.Sprintf("%s/%d", ifc.Address, plen)))
 	if err != nil {
 		return fmt.Errorf("reply: %v, error: %s", reply, err)
