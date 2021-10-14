@@ -926,7 +926,7 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 		for k, v := range hal.aclRules {
 			if v == ruleAsKey {
 				currentRuleId = k
-				log.Debugf("rule already exist with id, %d", currentRuleId)
+				log.Infof("rule %v found in cache with index %d", fk, currentRuleId)
 				break
 			}
 		}
@@ -957,11 +957,15 @@ func (hal *DnHalImpl) Steer(rules []SteerItem) error {
 		})
 	}
 
+	if len(rulesList) == 0 {
+		log.Info("empty rule list, nothing to configure")
+		return nil
+	}
+
 	xmlString, err := getAclRuleConfigXml(rulesList)
 	if err != nil {
 		return err
 	}
-	log.Info("steer xml: %s", string(xmlString))
 
 	_, err = session.Exec(netconf.RawMethod(xmlString))
 	if err != nil {
