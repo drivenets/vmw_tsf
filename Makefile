@@ -34,3 +34,14 @@ proto:
 .PHONY: hal-stats
 hal-stats:
 	go build -o bin/hal-stats cmd/stats/main.go
+
+.PHONY: hal-stats-in-docker
+hal-stats-in-docker:
+	@DOCKER_BUILDKIT=1 \
+	docker build . \
+		--target bin \
+		--output bin/ \
+		--build-arg TOOL_NAME=hal-stats \
+		--build-arg TOOL_MAIN=cmd/stats/main.go
+
+
