@@ -501,7 +501,7 @@ func handleTunnelAdd(h hal.DnHal) error {
 	if err != nil {
 		return err
 	}
-	return h.AddTunnel(tunNameOpt, src, dst, hal.RSVP, haloAddr, *haloNet)
+	return h.AddTunnel(tunNameOpt, src, dst, hal.VXLAN, haloAddr, *haloNet)
 }
 
 func handleTunnelDelete(h hal.DnHal) error {

@@ -1244,16 +1244,56 @@ func MethodRsvpTunnelAdd(name string, source net.IP, destination net.IP) netconf
 	return netconf.RawMethod(body.String())
 }
 
+const (
+	vxLanTunnelAddXml = `<edit-config>
+<target><candidate/></target>
+<default-operation>merge</default-operation>
+<error-option>rollback-on-error</error-option>
+<config xmlns:dn-interfaces="http://drivenets.com/ns/yang/dn-interfaces" xmlns:dn-top="http://drivenets.com/ns/yang/dn-top">
+<dn-top:drivenets-top>
+  <dn-interfaces:interfaces>
+	<interface>
+	  <config-items>
+		<enabled>true</enabled>
+	  </config-items>
+	  <name>{{.name}}</name>
+	</interface>
+  </dn-interfaces:interfaces>
+</dn-top:drivenets-top>
+</config>
+</edit-config>`
+)
+
+func MethodVxLanTunnelAdd(name string, source net.IP, destination net.IP) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(vxLanTunnelAddXml)).
+		Execute(body, map[string]interface{}{
+			"name": name,
+		})
+	return netconf.RawMethod(body.String())
+}
+
 func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t TunnelType, haloAddr net.IP, haloNet net.IPNet) error {
-	if t != RSVP {
-		return fmt.Errorf("ERROR: Failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
+	session := NetConfConnector()
+	switch t {
+	case RSVP:
+		reply, err := session.Exec(MethodRsvpTunnelAdd(name, source, destination))
+		if err != nil {
+			return fmt.Errorf("reply: %v, error: %s", reply, err)
+		} else {
+			log.Infof("added tunnel %s, type %v", name, t)
+		}
+	case VXLAN:
+		reply, err := session.Exec(MethodVxLanTunnelAdd(name, source, destination))
+		if err != nil {
+			return fmt.Errorf("reply: %v, error: %s", reply, err)
+		} else {
+			log.Infof("added tunnel %s, type %v", name, t)
+		}
+	default:
+		return fmt.Errorf("ERROR: Failed to add tunnel %v. Reason: tunnel type %v is not supported", name, t)
 	}
 
-	session := NetConfConnector()
-	reply, err := session.Exec(MethodRsvpTunnelAdd(name, source, destination))
-	if err != nil {
-		return fmt.Errorf("reply: %v, error: %s", reply, err)
-	}
 	if ifc, err := GetTunnelInterface(name, t); err == nil {
 		siIfc := SiInterface{
 			Physical: ifc,
@@ -1302,22 +1342,61 @@ func MethodRsvpTunnelDelete(name string) netconf.RawMethod {
 	return netconf.RawMethod(body.String())
 }
 
+const (
+	vxLanTunnelDeleteXml = `<edit-config>
+<target><candidate/></target>
+<default-operation>none</default-operation>
+<error-option>rollback-on-error</error-option>
+<config xmlns:dn-interfaces="http://drivenets.com/ns/yang/dn-interfaces" xmlns:dn-top="http://drivenets.com/ns/yang/dn-top">
+<dn-top:drivenets-top>
+  <dn-interfaces:interfaces>
+	<interface>
+	  <config-items>
+		<enabled>false</enabled>
+	  </config-items>
+	  <name>{{.name}}</name>
+	</interface>
+  </dn-interfaces:interfaces>
+</dn-top:drivenets-top>
+</config>
+</edit-config>`
+)
+
+func MethodVxLanTunnelDelete(name string) netconf.RawMethod {
+	body := &bytes.Buffer{}
+	template.Must(template.New("").Parse(vxLanTunnelDeleteXml)).
+		Execute(body, map[string]interface{}{
+			"name": name,
+		})
+	return netconf.RawMethod(body.String())
+}
+
 const SI_HALO_NAME = "halo"
 const FLOW_MONITORING_TEMPLATE = "halo"
 const FLOW_MONITORING_PROFILE = "halo"
 
 func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
-	if t != RSVP {
+	session := NetConfConnector()
+
+	switch t {
+	case RSVP:
+		reply, err := session.Exec(MethodRsvpTunnelDelete(name))
+		if err != nil {
+			return fmt.Errorf("reply: %v, error: %s", reply, err)
+		} else {
+			log.Infof("deleted tunnel %s, type %v", name, t)
+		}
+	case VXLAN:
+		reply, err := session.Exec(MethodVxLanTunnelDelete(name))
+		if err != nil {
+			return fmt.Errorf("reply: %v, error: %s", reply, err)
+		} else {
+			log.Infof("deleted tunnel %s, type %v", name, t)
+		}
+	default:
 		return fmt.Errorf("failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
 	}
 
-	session := NetConfConnector()
-	reply, err := session.Exec(MethodRsvpTunnelDelete(name))
-	if err != nil {
-		return fmt.Errorf("reply: %v, error: %s", reply, err)
-	} else {
-		log.Infof("deleted tunnel %s, type %v", name, t)
-	}
 	if ifc, err := GetTunnelInterface(name, t); err == nil {
 		if iflist, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
 			log.Warnf("failed to get SI %s interfaces. Skip SI configuration", SI_HALO_NAME)

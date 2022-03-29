@@ -78,7 +78,8 @@ type FlowVisitor func(*FlowKey, *FlowTelemetry) error
 type TunnelType int
 
 const (
-	RSVP TunnelType = iota
+	RSVP  TunnelType = iota
+	VXLAN TunnelType = iota
 )
 
 // DnHal interface
