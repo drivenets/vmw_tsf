@@ -208,9 +208,9 @@ package hal
 var Commit = "<commit />"
 
 type ServerConf struct {
-    netconfUser     string
-    netconfPassword string
-    netconfHost     string
+	netconfUser     string
+	netconfPassword string
+	netconfHost     string
 }
 
 var nc = &ServerConf{}

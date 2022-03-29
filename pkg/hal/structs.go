@@ -83,10 +83,10 @@ type Ipv4 struct {
 }
 
 type AccessList struct {
-	XMLName     xml.Name    `xml:"access-list,omitempty" json:"access-list,omitempty"`
+	XMLName     xml.Name     `xml:"access-list,omitempty" json:"access-list,omitempty"`
 	ConfigItems *ConfigItems `xml:"config-items,omitempty" json:"config-items,omitempty"`
-	Name        string      `xml:"name,omitempty" json:"name,omitempty"`
-	Rules       Rules       `xml:"rules,omitempty" json:"rules,omitempty"`
+	Name        string       `xml:"name,omitempty" json:"name,omitempty"`
+	Rules       Rules        `xml:"rules,omitempty" json:"rules,omitempty"`
 }
 
 type ConfigItems struct {
@@ -95,10 +95,10 @@ type ConfigItems struct {
 }
 
 type Rules struct {
-	XMLName xml.Name `xml:"rules,omitempty" json:"rules,omitempty"`
-	Rule    []Rule   `xml:"rule,omitempty" json:"rule,omitempty"`
-	AttrXmlnsnc          string           `xml:"xmlns nc,attr,omitempty" json:",omitempty"`
-	AttrNcSpaceoperation string           `xml:"urn:ietf:params:xml:ns:netconf:base:1.0 operation,attr,omitempty" json:",omitempty"`
+	XMLName              xml.Name `xml:"rules,omitempty" json:"rules,omitempty"`
+	Rule                 []Rule   `xml:"rule,omitempty" json:"rule,omitempty"`
+	AttrXmlnsnc          string   `xml:"xmlns nc,attr,omitempty" json:",omitempty"`
+	AttrNcSpaceoperation string   `xml:"urn:ietf:params:xml:ns:netconf:base:1.0 operation,attr,omitempty" json:",omitempty"`
 }
 
 // Delete rule by ID
@@ -119,12 +119,12 @@ type Rule struct {
 }
 
 type RuleConfigItems struct {
-	XMLName     xml.Name    `xml:"config-items,omitempty" json:"config-items,omitempty"`
+	XMLName     xml.Name     `xml:"config-items,omitempty" json:"config-items,omitempty"`
 	Ipv4Matches *Ipv4Matches `xml:"ipv4-matches,omitempty" json:"ipv4-matches,omitempty"`
 	Matches     *Matches     `xml:"matches,omitempty" json:"matches,omitempty"`
 	Nexthop1    *net.IP      `xml:"nexthops>nexthop1,omitempty" json:"nexthops,omitempty"`
-	Protocol    string      `xml:"protocol,omitempty" json:"protocol,omitempty"`
-	RuleType    string      `xml:"rule-type,omitempty" json:"rule-type,omitempty"`
+	Protocol    string       `xml:"protocol,omitempty" json:"protocol,omitempty"`
+	RuleType    string       `xml:"rule-type,omitempty" json:"rule-type,omitempty"`
 }
 
 type Ipv4Matches struct {
