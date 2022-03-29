@@ -513,7 +513,7 @@ func handleTunnelDelete(h hal.DnHal) error {
 		return fmt.Errorf("unsupported tunnel type: %s (try 'rsvp' instead)", tunTypeOpt)
 	}
 
-	return h.DeleteTunnel(tunNameOpt, hal.RSVP)
+	return h.DeleteTunnel(tunNameOpt, hal.VXLAN)
 }
 
 func handleInterfaceAddWan() error {
