@@ -1274,17 +1274,27 @@ func MethodVxLanTunnelAdd(name string, source net.IP, destination net.IP) netcon
 }
 
 func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t TunnelType, haloAddr net.IP, haloNet net.IPNet) error {
+	var ifc string
+	var err error
+	var reply *netconf.RPCReply
+
 	session := NetConfConnector()
 	switch t {
 	case RSVP:
-		reply, err := session.Exec(MethodRsvpTunnelAdd(name, source, destination))
+		reply, err = session.Exec(MethodRsvpTunnelAdd(name, source, destination))
 		if err != nil {
 			return fmt.Errorf("reply: %v, error: %s", reply, err)
 		} else {
 			log.Infof("added tunnel %s, type %v", name, t)
 		}
+		ifc, err = GetRsvpTunnelInterface(name)
 	case VXLAN:
-		reply, err := session.Exec(MethodVxLanTunnelAdd(name, source, destination))
+		ifc, err = GetVxlanTunnelInterface(name)
+		if err != nil {
+			return err
+		}
+		log.Infof("add tunnel name=%s, ifc=%s, type %v", name, ifc, t)
+		reply, err = session.Exec(MethodVxLanTunnelAdd(ifc, source, destination))
 		if err != nil {
 			return fmt.Errorf("reply: %v, error: %s", reply, err)
 		} else {
@@ -1294,7 +1304,7 @@ func (h *DnHalImpl) AddTunnel(name string, source net.IP, destination net.IP, t 
 		return fmt.Errorf("ERROR: Failed to add tunnel %v. Reason: tunnel type %v is not supported", name, t)
 	}
 
-	if ifc, err := GetTunnelInterface(name, t); err == nil {
+	if err == nil {
 		siIfc := SiInterface{
 			Physical: ifc,
 			Address:  haloAddr,
@@ -1397,7 +1407,7 @@ func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
 		return fmt.Errorf("failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
 	}
 
-	if ifc, err := GetTunnelInterface(name, t); err == nil {
+	if ifc, err := GetRsvpTunnelInterface(name); err == nil {
 		if iflist, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
 			log.Warnf("failed to get SI %s interfaces. Skip SI configuration", SI_HALO_NAME)
 		} else {
@@ -1448,11 +1458,7 @@ func MethodRsvpTunnelGetExplicitPath(name string) netconf.RawMethod {
 	return netconf.RawMethod(body.String())
 }
 
-func GetTunnelInterface(name string, t TunnelType) (string, error) {
-	if t != RSVP {
-		return "", fmt.Errorf("ERROR: Failed to get tunnel interface %v. Reason: tunnel type %v is not supported", name, t)
-	}
-
+func GetRsvpTunnelInterface(name string) (string, error) {
 	session := NetConfConnector()
 	path := fmt.Sprintf("%spath", name)
 	reply, err := session.Exec(MethodRsvpTunnelGetExplicitPath(path))
@@ -1539,6 +1545,80 @@ func GetInterfaceConnectedTo(addr net.IP) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no interface for IP %s", addr)
+}
+
+func GetVxlanTunnelInterface(name string) (string, error) {
+	ifc, err := GetInterfaceByDescription(name)
+	if err != nil {
+		log.Info(err)
+		return "", err
+	}
+	return ifc, nil
+}
+
+const (
+	interfacesDescriptionGetXml = `
+<get-config>
+    <source><running/></source>
+	<filter type="subree">
+		<drivenets-top xmlns="http://drivenets.com/ns/yang/dn-top">
+		<interfaces>
+			<interface>
+			<config-items>
+				<description></description>
+			</config-items>
+			</interface>
+		</interfaces>
+		</drivenets-top>
+	</filter>
+</get-config>`
+)
+
+func MethodInterfacesDescriptionGet() netconf.RawMethod {
+	return netconf.RawMethod(interfacesDescriptionGetXml)
+}
+
+type ifDescConfigXml struct {
+	Description string `xml:"description"`
+}
+
+func GetInterfaceByDescription(desc string) (string, error) {
+	session := NetConfConnector()
+	reply, err := session.Exec(MethodInterfacesDescriptionGet())
+	if err != nil {
+		return "", fmt.Errorf("reply: %v, error: %s", reply, err)
+	}
+	d := xml.NewDecoder(strings.NewReader(reply.Data))
+	var ifc string
+	for {
+		tok, err := d.Token()
+		if tok == nil || err == io.EOF {
+			break
+		} else if err != nil {
+			return "", fmt.Errorf("invalid token: %s. XML Response: %s", err, reply.Data)
+		}
+		switch ty := tok.(type) {
+		case xml.StartElement:
+			if ty.Name.Local == "name" {
+				if tok, err := d.Token(); err == nil {
+					if name, ok := tok.(xml.CharData); ok {
+						ifc = string(name)
+					}
+				}
+			}
+			if ty.Name.Local == "config-items" {
+				var cfg ifDescConfigXml
+				if err = d.DecodeElement(&cfg, &ty); err != nil {
+					continue
+				}
+				if cfg.Description == desc {
+					return ifc, nil
+				}
+			}
+		default:
+		}
+	}
+	return "", fmt.Errorf("no interface for description %s", desc)
 }
 
 const serviceInstanceInterfacesGetXml = `

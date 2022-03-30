@@ -490,8 +490,8 @@ func handleTunnelAdd(h hal.DnHal) error {
 		return fmt.Errorf("invalid tunnel destination address: %s", tunSrcOpt)
 	}
 
-	if tunTypeOpt != "rsvp" {
-		return fmt.Errorf("unsupported tunnel type: %s (try 'rsvp' instead)", tunTypeOpt)
+	if tunTypeOpt != "vxlan" && tunTypeOpt != "rsvp" {
+		return fmt.Errorf("unsupported tunnel type: %s (try 'vxlan' or 'rsvp')", tunTypeOpt)
 	}
 
 	if len(tunHaloIfcOpt) == 0 {
@@ -509,8 +509,8 @@ func handleTunnelDelete(h hal.DnHal) error {
 		return fmt.Errorf("empty tunnel name")
 	}
 
-	if tunTypeOpt != "rsvp" {
-		return fmt.Errorf("unsupported tunnel type: %s (try 'rsvp' instead)", tunTypeOpt)
+	if tunTypeOpt != "vxlan" && tunTypeOpt != "rsvp" {
+		return fmt.Errorf("unsupported tunnel type: %s (try 'vxlan' or 'rsvp')", tunTypeOpt)
 	}
 
 	return h.DeleteTunnel(tunNameOpt, hal.VXLAN)
@@ -705,7 +705,7 @@ func main() {
 	}
 	cmdTunnelAdd.Flags().StringVarP(&tunNameOpt, "name", "n", "", "Tunnel name")
 	cmdTunnelAdd.MarkFlagRequired("name")
-	cmdTunnelAdd.Flags().StringVarP(&tunTypeOpt, "type", "t", "rsvp", "Tunnel type")
+	cmdTunnelAdd.Flags().StringVarP(&tunTypeOpt, "type", "t", "vxlan", "Tunnel type")
 	cmdTunnelAdd.Flags().StringVarP(&tunSrcOpt, "source", "s", "", "Tunnel source IP")
 	cmdTunnelAdd.MarkFlagRequired("source")
 	cmdTunnelAdd.Flags().StringVarP(&tunDstOpt, "destination", "d", "", "Tunnel destination IP")
@@ -729,7 +729,7 @@ func main() {
 	}
 	cmdTunnelDelete.Flags().StringVarP(&tunNameOpt, "name", "n", "", "Tunnel name")
 	cmdTunnelDelete.MarkFlagRequired("name")
-	cmdTunnelDelete.Flags().StringVarP(&tunTypeOpt, "type", "t", "rsvp", "Tunnel type")
+	cmdTunnelDelete.Flags().StringVarP(&tunTypeOpt, "type", "t", "vxlan", "Tunnel type")
 	cmdTunnel.AddCommand(cmdTunnelDelete)
 	rootCmd.AddCommand(cmdTunnel)
 
