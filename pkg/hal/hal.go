@@ -1386,18 +1386,32 @@ const FLOW_MONITORING_TEMPLATE = "halo"
 const FLOW_MONITORING_PROFILE = "halo"
 
 func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
+	var ifc string
+	var err error
+	var reply *netconf.RPCReply
+	var iflist []SiInterface
+
 	session := NetConfConnector()
 
 	switch t {
 	case RSVP:
-		reply, err := session.Exec(MethodRsvpTunnelDelete(name))
+		reply, err = session.Exec(MethodRsvpTunnelDelete(name))
 		if err != nil {
 			return fmt.Errorf("reply: %v, error: %s", reply, err)
 		} else {
 			log.Infof("deleted tunnel %s, type %v", name, t)
 		}
+		ifc, err = GetRsvpTunnelInterface(name)
+		if err != nil {
+			return err
+		}
 	case VXLAN:
-		reply, err := session.Exec(MethodVxLanTunnelDelete(name))
+		ifc, err = GetVxlanTunnelInterface(name)
+		if err != nil {
+			return err
+		}
+		log.Infof("delete tunnel name=%s, ifc=%s, type %v", name, ifc, t)
+		reply, err = session.Exec(MethodVxLanTunnelDelete(ifc))
 		if err != nil {
 			return fmt.Errorf("reply: %v, error: %s", reply, err)
 		} else {
@@ -1407,21 +1421,19 @@ func (h *DnHalImpl) DeleteTunnel(name string, t TunnelType) error {
 		return fmt.Errorf("failed to delete tunnel %v. Reason: tunnel type %v is not supported", name, t)
 	}
 
-	if ifc, err := GetRsvpTunnelInterface(name); err == nil {
-		if iflist, err := GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
-			log.Warnf("failed to get SI %s interfaces. Skip SI configuration", SI_HALO_NAME)
-		} else {
-			for _, haloIfc := range iflist {
-				if ifc == haloIfc.Physical {
-					log.Infof("found matching SI %s interface %s. Delete it from config", SI_HALO_NAME, ifc)
-					if err = DeleteSiInterface(SI_HALO_NAME, ifc); err != nil {
-						log.Warnf("failed to delete si interface: %s", err)
-						return err
-					}
-					if err = DeleteInterfaceFlowMonitoring(ifc); err != nil {
-						log.Warnf("failed to delete interface %s flow monitoring: %s ", ifc, err)
-						return err
-					}
+	if iflist, err = GetServiceInstanceInterfaces(SI_HALO_NAME); err != nil {
+		log.Warnf("failed to get SI %s interfaces. Skip SI configuration", SI_HALO_NAME)
+	} else {
+		for _, haloIfc := range iflist {
+			if ifc == haloIfc.Physical {
+				log.Infof("found matching SI %s interface %s. Delete it from config", SI_HALO_NAME, ifc)
+				if err = DeleteSiInterface(SI_HALO_NAME, ifc); err != nil {
+					log.Warnf("failed to delete si interface: %s", err)
+					return err
+				}
+				if err = DeleteInterfaceFlowMonitoring(ifc); err != nil {
+					log.Warnf("failed to delete interface %s flow monitoring: %s ", ifc, err)
+					return err
 				}
 			}
 		}
